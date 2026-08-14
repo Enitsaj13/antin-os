@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: antin_os_postgres
+    restart: unless-stopped
+    ports:
+      - '5432:5432'
+    environment:
+      POSTGRES_USER: antin
+      POSTGRES_PASSWORD: antin_password
+      POSTGRES_DB: antin_os
+    volumes:
+      - antin_os_pgdata:/var/lib/postgresql/data
+
+volumes:
+  antin_os_pgdata:
