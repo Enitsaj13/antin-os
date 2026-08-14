@@ -20,8 +20,11 @@ export function useUpdateProjectMutation() {
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: UpdateProjectInput }) =>
       updateProject(id, input),
-    onSuccess: () => {
+    onSuccess: (_project, variables) => {
       void queryClient.invalidateQueries({ queryKey: projectQueryKeys.all });
+      void queryClient.invalidateQueries({
+        queryKey: projectQueryKeys.managedDetail(variables.id),
+      });
     },
   });
 }
@@ -31,8 +34,11 @@ export function useDeleteProjectMutation() {
 
   return useMutation({
     mutationFn: (id: string) => deleteProject(id),
-    onSuccess: () => {
+    onSuccess: (_project, id) => {
       void queryClient.invalidateQueries({ queryKey: projectQueryKeys.all });
+      void queryClient.invalidateQueries({
+        queryKey: projectQueryKeys.managedDetail(id),
+      });
     },
   });
 }

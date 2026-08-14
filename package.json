@@ -17,7 +17,8 @@
     "test:e2e:web:ui": "playwright test --ui",
     "test:e2e:api": "pnpm --filter api test:e2e",
     "test:e2e": "pnpm test:e2e:api && pnpm test:e2e:web",
-    "test:final": "pnpm test:commit && pnpm --filter api build && pnpm --filter web build && pnpm test:e2e && pnpm exec openspec validate --all --strict"
+    "test:final": "pnpm test:commit && pnpm --filter api build && pnpm --filter web build && pnpm test:e2e && pnpm exec openspec validate --all --strict",
+    "openspec:archive-complete": "node scripts/archive-completed-openspec-changes.mjs"
   },
   "keywords": [],
   "author": "",
@@ -30,6 +31,7 @@
     "simple-git-hooks": "^2.13.1"
   },
   "simple-git-hooks": {
-    "pre-commit": "pnpm test:commit"
+    "pre-commit": "pnpm test:commit",
+    "post-commit": "pnpm openspec:archive-complete --commit"
   }
 }

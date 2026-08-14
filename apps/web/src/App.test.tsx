@@ -4,23 +4,36 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
 import { constrainCrop, CropState, OUTPUT_SIZE } from './crop';
 import type { Profile } from '@antin-os/shared';
+import type { Project } from '@antin-os/shared';
 import * as profileQueries from './queries/profile.queries';
 import * as profileMutations from './mutations/profile.mutations';
+import * as projectQueries from './queries/project.queries';
+import * as projectMutations from './mutations/project.mutations';
 
 vi.mock('./queries/profile.queries');
 vi.mock('./mutations/profile.mutations');
+vi.mock('./queries/project.queries');
+vi.mock('./mutations/project.mutations');
 
 const mockedProfileQueries = vi.mocked(profileQueries);
 const mockedProfileMutations = vi.mocked(profileMutations);
+const mockedProjectQueries = vi.mocked(projectQueries);
+const mockedProjectMutations = vi.mocked(projectMutations);
 
 const uploadProfilePicture = vi.fn();
 const saveProfile = vi.fn();
 const removeProfilePicture = vi.fn();
+const createProject = vi.fn();
+const updateProject = vi.fn();
+const deleteProject = vi.fn();
+const refetchProjects = vi.fn();
+const refetchProject = vi.fn();
 
 class MockImage {
   width = 1000;
@@ -66,14 +79,25 @@ function resetApiMocks() {
   mockedProfileMutations.useSaveProfileMutation.mockReset();
   mockedProfileMutations.useUploadProfilePictureMutation.mockReset();
   mockedProfileMutations.useRemoveProfilePictureMutation.mockReset();
+  mockedProjectQueries.useProjects.mockReset();
+  mockedProjectQueries.useProject.mockReset();
+  mockedProjectMutations.useCreateProjectMutation.mockReset();
+  mockedProjectMutations.useUpdateProjectMutation.mockReset();
+  mockedProjectMutations.useDeleteProjectMutation.mockReset();
   saveProfile.mockReset();
   uploadProfilePicture.mockReset();
   removeProfilePicture.mockReset();
+  createProject.mockReset();
+  updateProject.mockReset();
+  deleteProject.mockReset();
+  refetchProjects.mockReset();
+  refetchProject.mockReset();
 }
 
 afterEach(() => {
   cleanup();
   resetApiMocks();
+  window.history.pushState({}, '', '/');
 });
 
 function file(type = 'image/png') {
@@ -99,12 +123,83 @@ function mockProfileHooks(profile: Profile | null = null) {
   >);
 }
 
+function project(overrides: Partial<Project> = {}): Project {
+  return {
+    id: 'project-1',
+    title: 'Portfolio API',
+    slug: 'portfolio-api',
+    summary: 'A portfolio API',
+    description: 'Detailed description',
+    techStack: ['NestJS', 'Prisma'],
+    repoUrl: 'https://github.com/example/repo',
+    liveUrl: 'https://example.com',
+    imageUrl: 'https://example.com/image.png',
+    isPublic: true,
+    createdAt: '2026-08-13T10:00:00.000Z',
+    updatedAt: '2026-08-14T10:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function mockProjectHooks(projects: Project[] = []) {
+  mockedProjectQueries.useProjects.mockReturnValue({
+    data: projects,
+    isLoading: false,
+    isError: false,
+    error: null,
+    refetch: refetchProjects,
+  } as unknown as ReturnType<typeof projectQueries.useProjects>);
+  mockedProjectQueries.useProject.mockImplementation((idOrSlug: string) => {
+    const found = projects.find(
+      (candidate) => candidate.id === idOrSlug || candidate.slug === idOrSlug,
+    );
+
+    return {
+      data: found ?? null,
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: refetchProject,
+    } as unknown as ReturnType<typeof projectQueries.useProject>;
+  });
+  mockedProjectMutations.useCreateProjectMutation.mockReturnValue({
+    mutateAsync: createProject,
+    isPending: false,
+  } as unknown as ReturnType<typeof projectMutations.useCreateProjectMutation>);
+  mockedProjectMutations.useUpdateProjectMutation.mockReturnValue({
+    mutateAsync: updateProject,
+    isPending: false,
+  } as unknown as ReturnType<typeof projectMutations.useUpdateProjectMutation>);
+  mockedProjectMutations.useDeleteProjectMutation.mockReturnValue({
+    mutateAsync: deleteProject,
+    isPending: false,
+  } as unknown as ReturnType<typeof projectMutations.useDeleteProjectMutation>);
+}
+
+function renderApp(path = '/') {
+  window.history.pushState({}, '', path);
+
+  if (mockedProfileQueries.useProfile() === undefined) {
+    mockProfileHooks();
+  }
+
+  if (
+    mockedProjectQueries.useProjects() === undefined ||
+    mockedProjectQueries.useProject('') === undefined
+  ) {
+    mockProjectHooks();
+  }
+
+  return render(<App />);
+}
+
 describe('profile admin', () => {
   it('canceling crop performs no upload', async () => {
     mockProfileHooks();
+    mockProjectHooks();
     uploadProfilePicture.mockResolvedValue({} as Profile);
 
-    render(<App />);
+    renderApp('/admin/profile');
 
     fireEvent.change(screen.getByLabelText('Select profile picture'), {
       target: { files: [file()] },
@@ -133,6 +228,7 @@ describe('profile admin', () => {
     let resolveUpload: ((profile: Profile) => void) | undefined;
 
     mockProfileHooks();
+    mockProjectHooks();
     uploadProfilePicture.mockImplementation(({ onProgress }) => {
       onProgress(100);
       return new Promise((resolve) => {
@@ -140,7 +236,7 @@ describe('profile admin', () => {
       });
     });
 
-    render(<App />);
+    renderApp('/admin/profile');
 
     fireEvent.change(screen.getByLabelText('Select profile picture'), {
       target: { files: [file()] },
@@ -187,9 +283,10 @@ describe('profile admin', () => {
 
   it('shows upload and storage errors', async () => {
     mockProfileHooks();
+    mockProjectHooks();
     uploadProfilePicture.mockRejectedValue(new Error('storage failed'));
 
-    render(<App />);
+    renderApp('/admin/profile');
 
     fireEvent.change(screen.getByLabelText('Select profile picture'), {
       target: { files: [file()] },
@@ -201,5 +298,390 @@ describe('profile admin', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'storage failed',
     );
+  });
+});
+
+describe('admin navigation', () => {
+  it('routes profile management to /admin/profile and navigates to projects', () => {
+    renderApp('/admin/profile');
+
+    expect(
+      screen.getByRole('heading', { name: 'Portfolio management' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'Profile' }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Projects' }));
+
+    expect(window.location.pathname).toBe('/admin/projects');
+    expect(
+      screen.getByRole('heading', { name: 'Projects' }),
+    ).toBeInTheDocument();
+  });
+});
+
+describe('projects admin list', () => {
+  it('shows loading, empty, and error states with retry', () => {
+    mockProfileHooks();
+    mockProjectHooks();
+    mockedProjectQueries.useProjects.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      isError: false,
+      error: null,
+      refetch: refetchProjects,
+    } as unknown as ReturnType<typeof projectQueries.useProjects>);
+
+    const { rerender } = renderApp('/admin/projects');
+
+    expect(screen.getByRole('status')).toHaveTextContent('Loading projects');
+
+    mockedProjectQueries.useProjects.mockReturnValue({
+      data: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: refetchProjects,
+    } as unknown as ReturnType<typeof projectQueries.useProjects>);
+    rerender(<App />);
+
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'No matching projects are available.',
+    );
+
+    mockedProjectQueries.useProjects.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error('load failed'),
+      refetch: refetchProjects,
+    } as unknown as ReturnType<typeof projectQueries.useProjects>);
+    rerender(<App />);
+
+    expect(screen.getByRole('alert')).toHaveTextContent('load failed');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(refetchProjects).toHaveBeenCalled();
+  });
+
+  it('lists projects, filters by publication state, and opens delete dialog', async () => {
+    const publicProject = project();
+    const privateProject = project({
+      id: 'project-2',
+      title: 'Internal Tool',
+      slug: 'internal-tool',
+      isPublic: false,
+      techStack: ['React'],
+    });
+    mockProfileHooks();
+    mockProjectHooks([publicProject, privateProject]);
+    deleteProject.mockImplementation(async () => {
+      mockedProjectQueries.useProjects.mockReturnValue({
+        data: [publicProject],
+        isLoading: false,
+        isError: false,
+        error: null,
+        refetch: refetchProjects,
+      } as unknown as ReturnType<typeof projectQueries.useProjects>);
+
+      return privateProject;
+    });
+
+    renderApp('/admin/projects');
+
+    expect(screen.getAllByText('Portfolio API')[0]).toBeInTheDocument();
+    expect(screen.getAllByText('Internal Tool')[0]).toBeInTheDocument();
+    expect(screen.getAllByText('NestJS, Prisma')[0]).toBeInTheDocument();
+    expect(screen.getAllByText('Public')[0]).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Unpublished' }));
+    expect(screen.queryByText('Portfolio API')).not.toBeInTheDocument();
+    expect(screen.getAllByText('Internal Tool')[0]).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getAllByRole('button', { name: 'Delete Internal Tool' })[0],
+    );
+    expect(screen.getByRole('dialog')).toHaveTextContent(
+      'Delete Internal Tool?',
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(deleteProject).not.toHaveBeenCalled();
+
+    fireEvent.click(
+      screen.getAllByRole('button', { name: 'Delete Internal Tool' })[0],
+    );
+    fireEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', {
+        name: 'Delete',
+      }),
+    );
+
+    await waitFor(() =>
+      expect(deleteProject).toHaveBeenCalledWith('project-2'),
+    );
+    await waitFor(() =>
+      expect(screen.queryByText('Internal Tool')).not.toBeInTheDocument(),
+    );
+  });
+
+  it('keeps the project visible and displays API error when deletion fails', async () => {
+    mockProfileHooks();
+    mockProjectHooks([project()]);
+    deleteProject.mockRejectedValue(new Error('delete failed'));
+
+    renderApp('/admin/projects');
+
+    fireEvent.click(
+      screen.getAllByRole('button', { name: 'Delete Portfolio API' })[0],
+    );
+    fireEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', {
+        name: 'Delete',
+      }),
+    );
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('delete failed');
+    expect(screen.getAllByText('Portfolio API')[0]).toBeInTheDocument();
+  });
+
+  it('disables duplicate delete submissions while deletion is pending', () => {
+    mockProfileHooks();
+    mockProjectHooks([project()]);
+    mockedProjectMutations.useDeleteProjectMutation.mockReturnValue({
+      mutateAsync: deleteProject,
+      isPending: true,
+    } as unknown as ReturnType<
+      typeof projectMutations.useDeleteProjectMutation
+    >);
+
+    renderApp('/admin/projects');
+
+    fireEvent.click(
+      screen.getAllByRole('button', { name: 'Delete Portfolio API' })[0],
+    );
+
+    const dialog = screen.getByRole('dialog');
+    expect(
+      within(dialog).getByRole('button', { name: 'Cancel' }),
+    ).toBeDisabled();
+    expect(
+      within(dialog).getByRole('button', { name: 'Deleting' }),
+    ).toBeDisabled();
+  });
+});
+
+describe('project form', () => {
+  it('creates private projects with generated slugs and normalized tech stack', async () => {
+    mockProfileHooks();
+    mockProjectHooks();
+    createProject.mockResolvedValue(project({ isPublic: false }));
+
+    renderApp('/admin/projects/new');
+
+    expect(screen.getByLabelText('Private')).not.toBeChecked();
+
+    fireEvent.change(screen.getByLabelText('Title'), {
+      target: { value: 'My New Project' },
+    });
+    expect(screen.getByLabelText('Slug')).toHaveValue('my-new-project');
+
+    fireEvent.change(screen.getByLabelText('Slug'), {
+      target: { value: 'custom-slug' },
+    });
+    fireEvent.change(screen.getByLabelText('Title'), {
+      target: { value: 'Changed Title' },
+    });
+    expect(screen.getByLabelText('Slug')).toHaveValue('custom-slug');
+
+    fireEvent.change(screen.getByLabelText('Summary'), {
+      target: { value: 'Useful project' },
+    });
+    fireEvent.change(screen.getByLabelText('Tech stack'), {
+      target: { value: 'React, NestJS' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() =>
+      expect(createProject).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'Changed Title',
+          slug: 'custom-slug',
+          summary: 'Useful project',
+          techStack: ['React', 'NestJS'],
+          isPublic: false,
+        }),
+      ),
+    );
+    expect(window.location.pathname).toBe('/admin/projects');
+  });
+
+  it('validates required fields, slug format, urls, and tech stack entries', async () => {
+    renderApp('/admin/projects/new');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByText('Title is required.')).toBeInTheDocument();
+    expect(screen.getByText('Slug is required.')).toBeInTheDocument();
+    expect(screen.getByText('Summary is required.')).toBeInTheDocument();
+    expect(
+      screen.getByText('Add at least one technology.'),
+    ).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Slug'), {
+      target: { value: 'Bad Slug' },
+    });
+    fireEvent.change(screen.getByLabelText('Title'), {
+      target: { value: 'Bad Slug' },
+    });
+    fireEvent.change(screen.getByLabelText('Summary'), {
+      target: { value: 'Summary' },
+    });
+    fireEvent.change(screen.getByLabelText('Tech stack'), {
+      target: { value: 'React' },
+    });
+    fireEvent.change(screen.getByLabelText('Repository URL'), {
+      target: { value: 'not-a-url' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(
+      await screen.findByText(
+        'Use lowercase kebab-case, for example portfolio-api.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Enter a valid URL.')).toBeInTheDocument();
+    expect(createProject).not.toHaveBeenCalled();
+  });
+
+  it('displays API validation errors and keeps create data on the form', async () => {
+    mockProfileHooks();
+    mockProjectHooks();
+    createProject.mockRejectedValue(new Error('Summary is too long'));
+
+    renderApp('/admin/projects/new');
+
+    fireEvent.change(screen.getByLabelText('Title'), {
+      target: { value: 'Validated Project' },
+    });
+    fireEvent.change(screen.getByLabelText('Summary'), {
+      target: { value: 'Summary' },
+    });
+    fireEvent.change(screen.getByLabelText('Tech stack'), {
+      target: { value: 'React' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Summary is too long',
+    );
+    expect(screen.getByLabelText('Title')).toHaveValue('Validated Project');
+    expect(window.location.pathname).toBe('/admin/projects/new');
+  });
+
+  it('disables duplicate save submissions while create is pending', () => {
+    mockProfileHooks();
+    mockProjectHooks();
+    mockedProjectMutations.useCreateProjectMutation.mockReturnValue({
+      mutateAsync: createProject,
+      isPending: true,
+    } as unknown as ReturnType<
+      typeof projectMutations.useCreateProjectMutation
+    >);
+
+    renderApp('/admin/projects/new');
+
+    expect(screen.getByRole('button', { name: 'Saving' })).toBeDisabled();
+  });
+
+  it('warns before publishing incomplete project information', async () => {
+    mockProfileHooks();
+    mockProjectHooks();
+    createProject.mockResolvedValue(project());
+
+    renderApp('/admin/projects/new');
+
+    fireEvent.change(screen.getByLabelText('Title'), {
+      target: { value: 'Public Project' },
+    });
+    fireEvent.change(screen.getByLabelText('Summary'), {
+      target: { value: 'Summary' },
+    });
+    fireEvent.change(screen.getByLabelText('Tech stack'), {
+      target: { value: 'React' },
+    });
+    fireEvent.click(screen.getByLabelText('Private'));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByRole('dialog')).toHaveTextContent(
+      'Publish incomplete project?',
+    );
+    expect(createProject).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Publish anyway' }));
+    await waitFor(() => expect(createProject).toHaveBeenCalled());
+  });
+
+  it('edits existing projects and displays duplicate slug conflicts', async () => {
+    const existing = project();
+    mockProfileHooks();
+    mockProjectHooks([existing]);
+    updateProject.mockRejectedValue(
+      new Error('{"message":"Project slug already exists","statusCode":409}'),
+    );
+
+    renderApp('/admin/projects/project-1/edit');
+
+    expect(screen.getByLabelText('Title')).toHaveValue('Portfolio API');
+    fireEvent.change(screen.getByLabelText('Slug'), {
+      target: { value: 'duplicate-slug' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'A project with this slug already exists.',
+    );
+    expect(window.location.pathname).toBe('/admin/projects/project-1/edit');
+  });
+
+  it('shows edit loading state and submits updates successfully', async () => {
+    const existing = project();
+    mockProfileHooks();
+    mockProjectHooks([existing]);
+    mockedProjectQueries.useProject.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      isError: false,
+      error: null,
+      refetch: refetchProject,
+    } as unknown as ReturnType<typeof projectQueries.useProject>);
+
+    const { rerender } = renderApp('/admin/projects/project-1/edit');
+
+    expect(screen.getByRole('status')).toHaveTextContent('Loading project');
+
+    mockedProjectQueries.useProject.mockReturnValue({
+      data: existing,
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: refetchProject,
+    } as unknown as ReturnType<typeof projectQueries.useProject>);
+    updateProject.mockResolvedValue(project({ summary: 'Updated summary' }));
+    rerender(<App />);
+
+    expect(screen.getByLabelText('Title')).toHaveValue('Portfolio API');
+    fireEvent.change(screen.getByLabelText('Summary'), {
+      target: { value: 'Updated summary' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() =>
+      expect(updateProject).toHaveBeenCalledWith({
+        id: 'project-1',
+        input: expect.objectContaining({ summary: 'Updated summary' }),
+      }),
+    );
+    expect(window.location.pathname).toBe('/admin/projects');
   });
 });
