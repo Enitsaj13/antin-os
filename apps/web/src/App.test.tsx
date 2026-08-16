@@ -32,8 +32,11 @@ const removeProfilePicture = vi.fn();
 const createProject = vi.fn();
 const updateProject = vi.fn();
 const deleteProject = vi.fn();
+const uploadProjectImage = vi.fn();
 const refetchProjects = vi.fn();
 const refetchProject = vi.fn();
+const refetchPublicProjects = vi.fn();
+const refetchPublicProject = vi.fn();
 
 class MockImage {
   width = 1000;
@@ -81,17 +84,23 @@ function resetApiMocks() {
   mockedProfileMutations.useRemoveProfilePictureMutation.mockReset();
   mockedProjectQueries.useProjects.mockReset();
   mockedProjectQueries.useProject.mockReset();
+  mockedProjectQueries.usePublicProjects.mockReset();
+  mockedProjectQueries.usePublicProject.mockReset();
   mockedProjectMutations.useCreateProjectMutation.mockReset();
   mockedProjectMutations.useUpdateProjectMutation.mockReset();
   mockedProjectMutations.useDeleteProjectMutation.mockReset();
+  mockedProjectMutations.useUploadProjectImageMutation.mockReset();
   saveProfile.mockReset();
   uploadProfilePicture.mockReset();
   removeProfilePicture.mockReset();
   createProject.mockReset();
   updateProject.mockReset();
   deleteProject.mockReset();
+  uploadProjectImage.mockReset();
   refetchProjects.mockReset();
   refetchProject.mockReset();
+  refetchPublicProjects.mockReset();
+  refetchPublicProject.mockReset();
 }
 
 afterEach(() => {
@@ -134,6 +143,7 @@ function project(overrides: Partial<Project> = {}): Project {
     repoUrl: 'https://github.com/example/repo',
     liveUrl: 'https://example.com',
     imageUrl: 'https://example.com/image.png',
+    imageKey: null,
     isPublic: true,
     createdAt: '2026-08-13T10:00:00.000Z',
     updatedAt: '2026-08-14T10:00:00.000Z',
@@ -174,20 +184,57 @@ function mockProjectHooks(projects: Project[] = []) {
     mutateAsync: deleteProject,
     isPending: false,
   } as unknown as ReturnType<typeof projectMutations.useDeleteProjectMutation>);
+  mockedProjectMutations.useUploadProjectImageMutation.mockReturnValue({
+    mutateAsync: uploadProjectImage,
+    isPending: false,
+  } as unknown as ReturnType<
+    typeof projectMutations.useUploadProjectImageMutation
+  >);
+}
+
+function mockPublicProjectHooks(projects: Project[] = []) {
+  mockedProjectQueries.usePublicProjects.mockReturnValue({
+    data: projects,
+    isLoading: false,
+    isError: false,
+    error: null,
+    refetch: refetchPublicProjects,
+  } as unknown as ReturnType<typeof projectQueries.usePublicProjects>);
+  mockedProjectQueries.usePublicProject.mockImplementation((slug: string) => {
+    const found = projects.find((candidate) => candidate.slug === slug);
+
+    return {
+      data: found ?? null,
+      isLoading: false,
+      isError: false,
+      error: found ? null : new Error('Request failed with status 404'),
+      refetch: refetchPublicProject,
+    } as unknown as ReturnType<typeof projectQueries.usePublicProject>;
+  });
 }
 
 function renderApp(path = '/') {
   window.history.pushState({}, '', path);
+  const isPublicPath = path === '/projects' || path.startsWith('/projects/');
 
-  if (mockedProfileQueries.useProfile() === undefined) {
-    mockProfileHooks();
-  }
+  if (isPublicPath) {
+    if (
+      mockedProjectQueries.usePublicProjects() === undefined ||
+      mockedProjectQueries.usePublicProject('') === undefined
+    ) {
+      mockPublicProjectHooks();
+    }
+  } else {
+    if (mockedProfileQueries.useProfile() === undefined) {
+      mockProfileHooks();
+    }
 
-  if (
-    mockedProjectQueries.useProjects() === undefined ||
-    mockedProjectQueries.useProject('') === undefined
-  ) {
-    mockProjectHooks();
+    if (
+      mockedProjectQueries.useProjects() === undefined ||
+      mockedProjectQueries.useProject('') === undefined
+    ) {
+      mockProjectHooks();
+    }
   }
 
   return render(<App />);
@@ -318,6 +365,198 @@ describe('admin navigation', () => {
     expect(
       screen.getByRole('heading', { name: 'Projects' }),
     ).toBeInTheDocument();
+  });
+});
+
+describe('public projects', () => {
+  it('renders public projects from the public query and navigates to detail', () => {
+    const publicProject = project();
+    const unpublishedProject = project({
+      id: 'project-2',
+      title: 'Internal Tool',
+      slug: 'internal-tool',
+      isPublic: false,
+    });
+    mockPublicProjectHooks([publicProject]);
+    mockedProjectQueries.useProjects.mockImplementation(() => {
+      throw new Error('Managed projects query should not run on public pages');
+    });
+    mockedProjectQueries.useProject.mockImplementation(() => {
+      throw new Error('Managed project query should not run on public pages');
+    });
+
+    renderApp('/projects');
+
+    expect(
+      screen.getByRole('heading', { name: 'Projects' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Portfolio API')).toBeInTheDocument();
+    expect(screen.getByText('A portfolio API')).toBeInTheDocument();
+    expect(screen.getByAltText('Portfolio API project image')).toHaveAttribute(
+      'src',
+      'https://example.com/image.png',
+    );
+    expect(screen.getByText('NestJS')).toBeInTheDocument();
+    expect(screen.getByText('Prisma')).toBeInTheDocument();
+    expect(
+      screen.queryByText(unpublishedProject.title),
+    ).not.toBeInTheDocument();
+    expect(mockedProjectQueries.useProjects).not.toHaveBeenCalled();
+    expect(mockedProjectQueries.useProject).not.toHaveBeenCalled();
+
+    fireEvent.click(
+      screen.getByRole('link', {
+        name: 'View Portfolio API project details',
+      }),
+    );
+
+    expect(window.location.pathname).toBe('/projects/portfolio-api');
+  });
+
+  it('shows public list loading, empty, and API-error states with retry', () => {
+    mockPublicProjectHooks();
+    mockedProjectQueries.usePublicProjects.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      isError: false,
+      error: null,
+      refetch: refetchPublicProjects,
+    } as unknown as ReturnType<typeof projectQueries.usePublicProjects>);
+
+    const { rerender } = renderApp('/projects');
+
+    expect(screen.getByRole('status')).toHaveTextContent('Loading projects');
+
+    mockedProjectQueries.usePublicProjects.mockReturnValue({
+      data: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: refetchPublicProjects,
+    } as unknown as ReturnType<typeof projectQueries.usePublicProjects>);
+    rerender(<App />);
+
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'No public projects are available.',
+    );
+
+    mockedProjectQueries.usePublicProjects.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error('public load failed'),
+      refetch: refetchPublicProjects,
+    } as unknown as ReturnType<typeof projectQueries.usePublicProjects>);
+    rerender(<App />);
+
+    expect(screen.getByRole('alert')).toHaveTextContent('public load failed');
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Retry public projects' }),
+    );
+    expect(refetchPublicProjects).toHaveBeenCalled();
+  });
+
+  it('renders public project detail fields, optional links, and back navigation', () => {
+    const publicProject = project();
+    mockPublicProjectHooks([publicProject]);
+    mockedProjectQueries.useProject.mockImplementation(() => {
+      throw new Error('Managed project query should not run on public pages');
+    });
+
+    renderApp('/projects/portfolio-api');
+
+    expect(mockedProjectQueries.usePublicProject).toHaveBeenCalledWith(
+      'portfolio-api',
+    );
+    expect(mockedProjectQueries.useProject).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole('heading', { name: 'Portfolio API' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('A portfolio API')).toBeInTheDocument();
+    expect(screen.getByText('Detailed description')).toBeInTheDocument();
+    expect(screen.getByAltText('Portfolio API project image')).toHaveAttribute(
+      'src',
+      'https://example.com/image.png',
+    );
+    expect(
+      screen.getByRole('link', { name: 'Open Portfolio API repository' }),
+    ).toHaveAttribute('href', 'https://github.com/example/repo');
+    expect(
+      screen.getByRole('link', { name: 'Open Portfolio API live demo' }),
+    ).toHaveAttribute('href', 'https://example.com');
+
+    fireEvent.click(
+      screen.getByRole('link', { name: 'Back to public projects' }),
+    );
+
+    expect(window.location.pathname).toBe('/projects');
+  });
+
+  it('omits optional public detail fields when URLs, image, and description are absent', () => {
+    const minimalProject = project({
+      title: 'Minimal Project',
+      slug: 'minimal-project',
+      description: null,
+      repoUrl: null,
+      liveUrl: null,
+      imageUrl: null,
+    });
+    mockPublicProjectHooks([minimalProject]);
+
+    renderApp('/projects/minimal-project');
+
+    expect(screen.getByText('Minimal Project')).toBeInTheDocument();
+    expect(
+      screen.queryByAltText('Minimal Project project image'),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('link', { name: 'Open Minimal Project repository' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('link', { name: 'Open Minimal Project live demo' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('shows detail loading, not-found, and API-error states with retry', () => {
+    mockPublicProjectHooks();
+    mockedProjectQueries.usePublicProject.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      isError: false,
+      error: null,
+      refetch: refetchPublicProject,
+    } as unknown as ReturnType<typeof projectQueries.usePublicProject>);
+
+    const { rerender } = renderApp('/projects/missing-project');
+
+    expect(screen.getByRole('status')).toHaveTextContent('Loading project');
+
+    mockedProjectQueries.usePublicProject.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error('Request failed with status 404'),
+      refetch: refetchPublicProject,
+    } as unknown as ReturnType<typeof projectQueries.usePublicProject>);
+    rerender(<App />);
+
+    expect(screen.getByRole('status')).toHaveTextContent('Project not found');
+    expect(
+      screen.getByRole('link', { name: 'View all public projects' }),
+    ).toHaveAttribute('href', '/projects');
+
+    mockedProjectQueries.usePublicProject.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error('server unavailable'),
+      refetch: refetchPublicProject,
+    } as unknown as ReturnType<typeof projectQueries.usePublicProject>);
+    rerender(<App />);
+
+    expect(screen.getByRole('alert')).toHaveTextContent('server unavailable');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry project' }));
+    expect(refetchPublicProject).toHaveBeenCalled();
   });
 });
 
@@ -514,6 +753,50 @@ describe('project form', () => {
       ),
     );
     expect(window.location.pathname).toBe('/admin/projects');
+  });
+
+  it('uploads a project image and saves its storage key', async () => {
+    mockProfileHooks();
+    mockProjectHooks();
+    uploadProjectImage.mockImplementation(async ({ onProgress }) => {
+      onProgress(100);
+      return {
+        key: 'project-images/123e4567-e89b-12d3-a456-426614174000.png',
+        uploadUrl: 'https://s3.example.com/upload',
+        imageUrl: 'https://cdn.example.com/project.png',
+      };
+    });
+    createProject.mockResolvedValue(project({ isPublic: false }));
+
+    renderApp('/admin/projects/new');
+
+    fireEvent.change(screen.getByLabelText('Title'), {
+      target: { value: 'Image Project' },
+    });
+    fireEvent.change(screen.getByLabelText('Summary'), {
+      target: { value: 'Summary' },
+    });
+    fireEvent.change(screen.getByLabelText('Tech stack'), {
+      target: { value: 'React' },
+    });
+    fireEvent.change(screen.getByLabelText('Project image'), {
+      target: { files: [file('image/png')] },
+    });
+
+    expect(
+      await screen.findByText('Project image uploaded'),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() =>
+      expect(createProject).toHaveBeenCalledWith(
+        expect.objectContaining({
+          imageKey: 'project-images/123e4567-e89b-12d3-a456-426614174000.png',
+          imageUrl: null,
+        }),
+      ),
+    );
   });
 
   it('validates required fields, slug format, urls, and tech stack entries', async () => {

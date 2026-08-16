@@ -14,6 +14,7 @@ Requires Node, pnpm 10, Docker, and Playwright Chromium.
 make init     # seed apps/api/.env + install dependencies/hooks/Playwright
 make up       # start local Postgres
 make migrate  # apply Prisma migrations
+make seed-portfolio # import current portfolio projects into local DB
 make dev      # API at http://localhost:3001 + web at http://localhost:5173
 ```
 
@@ -48,17 +49,18 @@ make e2e-ui             # Playwright UI runner
 
 ## Documentation
 
-| Read this                                                  | When you want to...                                         |
-| ---------------------------------------------------------- | ----------------------------------------------------------- |
-| [Repository Guide](docs/development/repository-guide.md)   | Set up, run, test, and troubleshoot this repo day-to-day    |
-| [Command Reference](docs/development/command-reference.md) | Pick the smallest useful Makefile or pnpm command           |
-| [Projects Module Spec](docs/specs/projects-module.md)      | Understand the portfolio projects module behavior           |
-| [OpenSpec](openspec/)                                      | Review specs, active changes, and archived change proposals |
+| Read this                                                         | When you want to...                                         |
+| ----------------------------------------------------------------- | ----------------------------------------------------------- |
+| [Repository Guide](docs/development/repository-guide.md)          | Set up, run, test, and troubleshoot this repo day-to-day    |
+| [Command Reference](docs/development/command-reference.md)        | Pick the smallest useful Makefile or pnpm command           |
+| [AWS S3 Project Images](docs/operations/aws-s3-project-images.md) | Configure S3 uploads for project screenshots                |
+| [Projects Module Spec](docs/specs/projects-module.md)             | Understand the portfolio projects module behavior           |
+| [OpenSpec](openspec/)                                             | Review specs, active changes, and archived change proposals |
 
 ## Stack at a Glance
 
 NestJS 11 + Prisma 7 + PostgreSQL 16 · Vite + React 19 + Tailwind · pnpm monorepo ·
-shared TypeScript contracts · AWS S3 profile-picture storage · Jest + Vitest +
+shared TypeScript contracts · AWS S3 image storage · Jest + Vitest +
 Playwright · Docker Compose · OpenSpec.
 
 ## Layout

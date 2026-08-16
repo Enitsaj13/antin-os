@@ -12,6 +12,7 @@ export type ProjectRecord = Pick<
   | 'repoUrl'
   | 'liveUrl'
   | 'imageUrl'
+  | 'imageKey'
   | 'isPublic'
   | 'createdAt'
   | 'updatedAt'
@@ -27,6 +28,7 @@ export const projectSelect = {
   repoUrl: true,
   liveUrl: true,
   imageUrl: true,
+  imageKey: true,
   isPublic: true,
   createdAt: true,
   updatedAt: true,

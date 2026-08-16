@@ -1,20 +1,26 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   Check,
   Edit3,
+  ImagePlus,
   Plus,
   RotateCcw,
   Save,
   Trash2,
   X,
 } from 'lucide-react';
-import { slugify } from '@antin-os/shared';
+import {
+  PROJECT_IMAGE_MAX_BYTES,
+  PROJECT_IMAGE_MIME_TYPES,
+  slugify,
+} from '@antin-os/shared';
 import type { CreateProjectInput, Project } from '@antin-os/shared';
 import {
   useCreateProjectMutation,
   useDeleteProjectMutation,
   useUpdateProjectMutation,
+  useUploadProjectImageMutation,
 } from './mutations/project.mutations';
 import { useProject, useProjects } from './queries/project.queries';
 
@@ -30,6 +36,7 @@ type ProjectFormValues = {
   repoUrl: string;
   liveUrl: string;
   imageUrl: string;
+  imageKey: string;
   isPublic: boolean;
 };
 
@@ -55,8 +62,11 @@ const EMPTY_PROJECT: ProjectFormValues = {
   repoUrl: '',
   liveUrl: '',
   imageUrl: '',
+  imageKey: '',
   isPublic: false,
 };
+
+const PROJECT_IMAGE_ACCEPT = PROJECT_IMAGE_MIME_TYPES.join(',');
 
 function formatDate(value: string) {
   if (!value) {
@@ -136,6 +146,7 @@ function projectToForm(project: Project): ProjectFormValues {
     repoUrl: project.repoUrl ?? '',
     liveUrl: project.liveUrl ?? '',
     imageUrl: project.imageUrl ?? '',
+    imageKey: project.imageKey ?? '',
     isPublic: project.isPublic,
   };
 }
@@ -149,7 +160,8 @@ function toProjectInput(values: ProjectFormValues): CreateProjectInput {
     techStack: splitTechStack(values.techStack),
     repoUrl: optionalUrl(values.repoUrl),
     liveUrl: optionalUrl(values.liveUrl),
-    imageUrl: optionalUrl(values.imageUrl),
+    imageUrl: values.imageKey ? null : optionalUrl(values.imageUrl),
+    imageKey: values.imageKey.trim() || null,
     isPublic: values.isPublic,
   };
 }
@@ -199,8 +211,12 @@ function hasIncompletePublicInfo(values: ProjectFormValues) {
     (!values.description.trim() ||
       !values.repoUrl.trim() ||
       !values.liveUrl.trim() ||
-      !values.imageUrl.trim())
+      (!values.imageUrl.trim() && !values.imageKey.trim()))
   );
+}
+
+function formatFileSize(bytes: number) {
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
 function ErrorText({ id, message }: { id: string; message?: string }) {
@@ -496,10 +512,15 @@ export function ProjectFormPage({
   const projectQuery = useProject(isEdit ? (projectId ?? '') : '');
   const createProjectMutation = useCreateProjectMutation();
   const updateProjectMutation = useUpdateProjectMutation();
+  const uploadProjectImageMutation = useUploadProjectImageMutation();
   const [form, setForm] = useState<ProjectFormValues>(EMPTY_PROJECT);
   const [slugManuallyEdited, setSlugManuallyEdited] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
   const [showPublishWarning, setShowPublishWarning] = useState(false);
+  const [imageUploadProgress, setImageUploadProgress] = useState<number | null>(
+    null,
+  );
+  const [imageUploadStatus, setImageUploadStatus] = useState('');
 
   useEffect(() => {
     if (isEdit && projectQuery.data) {
@@ -509,7 +530,9 @@ export function ProjectFormPage({
   }, [isEdit, projectQuery.data]);
 
   const isPending =
-    createProjectMutation.isPending || updateProjectMutation.isPending;
+    createProjectMutation.isPending ||
+    updateProjectMutation.isPending ||
+    uploadProjectImageMutation.isPending;
 
   function updateField<K extends keyof ProjectFormValues>(
     key: K,
@@ -571,6 +594,83 @@ export function ProjectFormPage({
     if (!isPending) {
       void submitProject();
     }
+  }
+
+  async function uploadProjectImage(file: File) {
+    setErrors((current) => ({
+      ...current,
+      imageUrl: undefined,
+      form: undefined,
+    }));
+
+    if (
+      !PROJECT_IMAGE_MIME_TYPES.includes(
+        file.type as (typeof PROJECT_IMAGE_MIME_TYPES)[number],
+      )
+    ) {
+      setErrors((current) => ({
+        ...current,
+        imageUrl: 'Use a JPEG, PNG, or WebP image.',
+      }));
+      return;
+    }
+
+    if (file.size > PROJECT_IMAGE_MAX_BYTES) {
+      setErrors((current) => ({
+        ...current,
+        imageUrl: `Use an image smaller than ${formatFileSize(PROJECT_IMAGE_MAX_BYTES)}.`,
+      }));
+      return;
+    }
+
+    setImageUploadProgress(0);
+    setImageUploadStatus('Uploading project image');
+
+    try {
+      const upload = await uploadProjectImageMutation.mutateAsync({
+        file,
+        fileName: file.name,
+        contentType: file.type,
+        onProgress: setImageUploadProgress,
+      });
+
+      setForm((current) => ({
+        ...current,
+        imageKey: upload.key,
+        imageUrl: upload.imageUrl,
+      }));
+      setImageUploadStatus('Project image uploaded');
+    } catch (error) {
+      setImageUploadStatus('');
+      setErrors((current) => ({
+        ...current,
+        imageUrl: errorMessage(error, 'Project image upload failed.'),
+      }));
+    }
+  }
+
+  function onProjectImageChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = '';
+
+    if (file) {
+      void uploadProjectImage(file);
+    }
+  }
+
+  function removeProjectImage() {
+    setForm((current) => ({
+      ...current,
+      imageUrl: '',
+      imageKey: '',
+    }));
+    setImageUploadProgress(null);
+    setImageUploadStatus('Project image removed from form');
+    setErrors((current) => ({
+      ...current,
+      imageUrl: undefined,
+      form: undefined,
+    }));
   }
 
   if (isEdit && projectQuery.isLoading) {
@@ -721,7 +821,7 @@ export function ProjectFormPage({
           <ErrorText id="project-tech-stack-error" message={errors.techStack} />
         </div>
 
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-2">
           <div className={FIELD_CLASS}>
             <label htmlFor="project-repo-url">Repository URL</label>
             <input
@@ -751,20 +851,74 @@ export function ProjectFormPage({
             />
             <ErrorText id="project-live-url-error" message={errors.liveUrl} />
           </div>
+        </div>
 
-          <div className={FIELD_CLASS}>
-            <label htmlFor="project-image-url">Image URL</label>
-            <input
-              id="project-image-url"
-              className={INPUT_CLASS}
-              aria-invalid={Boolean(errors.imageUrl)}
-              aria-describedby={
-                errors.imageUrl ? 'project-image-url-error' : undefined
-              }
-              value={form.imageUrl}
-              onChange={(event) => updateField('imageUrl', event.target.value)}
-            />
-            <ErrorText id="project-image-url-error" message={errors.imageUrl} />
+        <div className={FIELD_CLASS}>
+          <label htmlFor="project-image-file">Project image</label>
+          <div className="grid gap-3 border border-slate-300 p-3 md:grid-cols-[180px_1fr] md:items-center">
+            <div className="grid aspect-video place-items-center overflow-hidden border border-slate-300 bg-slate-100">
+              {form.imageUrl ? (
+                <img
+                  className="h-full w-full object-cover"
+                  src={form.imageUrl}
+                  alt={`${form.title || 'Project'} preview`}
+                />
+              ) : (
+                <span className="text-sm text-slate-600">No image</span>
+              )}
+            </div>
+            <div className="grid gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <label className={BUTTON_CLASS} htmlFor="project-image-file">
+                  <ImagePlus size={18} aria-hidden="true" />
+                  Upload image
+                </label>
+                {form.imageUrl ? (
+                  <button
+                    className={BUTTON_CLASS}
+                    type="button"
+                    disabled={isPending}
+                    onClick={removeProjectImage}
+                  >
+                    <X size={18} aria-hidden="true" />
+                    Remove image
+                  </button>
+                ) : null}
+              </div>
+              <input
+                id="project-image-file"
+                className="sr-only"
+                type="file"
+                accept={PROJECT_IMAGE_ACCEPT}
+                aria-invalid={Boolean(errors.imageUrl)}
+                aria-describedby={
+                  errors.imageUrl ? 'project-image-url-error' : undefined
+                }
+                disabled={isPending}
+                onChange={onProjectImageChange}
+              />
+              <p className="m-0 text-sm text-slate-600">
+                Upload JPEG, PNG, or WebP up to{' '}
+                {formatFileSize(PROJECT_IMAGE_MAX_BYTES)}.
+              </p>
+              {imageUploadProgress !== null ? (
+                <progress
+                  aria-label="Project image upload progress"
+                  className="h-2 w-full"
+                  max={100}
+                  value={imageUploadProgress}
+                />
+              ) : null}
+              {imageUploadStatus ? (
+                <p className="m-0 text-sm text-slate-700" role="status">
+                  {imageUploadStatus}
+                </p>
+              ) : null}
+              <ErrorText
+                id="project-image-url-error"
+                message={errors.imageUrl}
+              />
+            </div>
           </div>
         </div>
 
@@ -799,8 +953,8 @@ export function ProjectFormPage({
                   Publish incomplete project?
                 </h2>
                 <p className="m-0 mt-2 text-slate-700">
-                  Description, repository URL, live URL, or image URL is empty.
-                  You can publish anyway after confirming.
+                  Description, repository URL, live URL, or project image is
+                  empty. You can publish anyway after confirming.
                 </p>
               </div>
             </div>

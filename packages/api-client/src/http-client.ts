@@ -85,3 +85,38 @@ export function uploadMultipart<T>(
     request.send(form);
   });
 }
+
+export function uploadBinary(
+  url: string,
+  file: Blob,
+  contentType: string,
+  onProgress: (progress: number) => void,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open('PUT', url);
+    request.setRequestHeader('Content-Type', contentType);
+
+    request.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        onProgress(Math.round((event.loaded / event.total) * 100));
+      }
+    };
+
+    request.onload = () => {
+      if (request.status >= 200 && request.status < 300) {
+        resolve();
+        return;
+      }
+
+      reject(
+        new Error(
+          request.responseText || `Upload failed with status ${request.status}`,
+        ),
+      );
+    };
+
+    request.onerror = () => reject(new Error('Upload failed'));
+    request.send(file);
+  });
+}

@@ -27,6 +27,7 @@ make dev              # start API and web together
 make dev-api          # start Nest API only
 make dev-web          # start Vite web app only
 make migrate          # apply Prisma migrations
+make seed-portfolio   # upsert portfolio projects from the current portfolio
 make prisma-generate  # regenerate Prisma client
 make db-studio        # open Prisma Studio
 ```

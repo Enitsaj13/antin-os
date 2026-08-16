@@ -26,6 +26,7 @@ help:
 	@echo "  make dev-api          Start Nest API only"
 	@echo "  make dev-web          Start Vite web app only"
 	@echo "  make migrate          Apply Prisma migrations"
+	@echo "  make seed-portfolio   Upsert portfolio projects from the current portfolio"
 	@echo "  make db-studio        Open Prisma Studio"
 	@echo ""
 	@echo "Quality"
@@ -103,6 +104,10 @@ reset-db:
 .PHONY: migrate
 migrate:
 	$(PNPM) --filter api exec prisma migrate dev
+
+.PHONY: seed-portfolio
+seed-portfolio:
+	$(PNPM) --filter api seed:portfolio
 
 .PHONY: prisma-generate
 prisma-generate:

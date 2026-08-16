@@ -15,6 +15,7 @@
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
+    "seed:portfolio": "node prisma/seed-portfolio-projects.mjs",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "pretest": "pnpm --filter @antin-os/shared build",
     "test": "jest",

@@ -7,6 +7,10 @@ import request from 'supertest';
 import { configureApp } from '@src/app.setup';
 import { projectSelect } from './project-response';
 import { ProjectsModule } from './projects.module';
+import {
+  PROJECT_IMAGE_STORAGE,
+  ProjectImageStorage,
+} from './storage/project-image-storage';
 
 type MockPrismaService = {
   project: {
@@ -19,6 +23,10 @@ type MockPrismaService = {
   };
 };
 
+type MockProjectImageStorage = {
+  [Key in keyof ProjectImageStorage]: jest.Mock;
+};
+
 function createMockPrisma(): MockPrismaService {
   return {
     project: {
@@ -29,6 +37,14 @@ function createMockPrisma(): MockPrismaService {
       update: jest.fn(),
       delete: jest.fn(),
     },
+  };
+}
+
+function createMockProjectImageStorage(): MockProjectImageStorage {
+  return {
+    createUpload: jest.fn(),
+    getUrl: jest.fn(),
+    delete: jest.fn(),
   };
 }
 
@@ -45,6 +61,7 @@ function project(overrides = {}) {
     repoUrl: 'https://github.com/example/antin-os',
     liveUrl: 'https://antin.example.com',
     imageUrl: 'https://antin.example.com/image.png',
+    imageKey: null,
     isPublic: true,
     createdAt: now,
     updatedAt: now,
@@ -55,15 +72,20 @@ function project(overrides = {}) {
 describe('ProjectsController', () => {
   let app: INestApplication<App>;
   let prisma: MockPrismaService;
+  let storage: MockProjectImageStorage;
 
   beforeEach(async () => {
     prisma = createMockPrisma();
+    storage = createMockProjectImageStorage();
+    storage.getUrl.mockResolvedValue('https://cdn.example.com/project.png');
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [ProjectsModule],
     })
       .overrideProvider(PrismaService)
       .useValue(prisma)
+      .overrideProvider(PROJECT_IMAGE_STORAGE)
+      .useValue(storage)
       .compile();
 
     app = moduleFixture.createNestApplication();
@@ -109,6 +131,7 @@ describe('ProjectsController', () => {
         repoUrl: 'https://github.com/example/antin-os',
         liveUrl: undefined,
         imageUrl: undefined,
+        imageKey: undefined,
         isPublic: false,
       },
       select: projectSelect,
@@ -157,6 +180,33 @@ describe('ProjectsController', () => {
         data: { title: 'Updated' },
       }),
     );
+  });
+
+  it('creates project image uploads with storage keys and presigned URLs', async () => {
+    storage.createUpload.mockResolvedValue({
+      key: 'project-images/123e4567-e89b-12d3-a456-426614174000.png',
+      uploadUrl: 'https://s3.example.com/upload',
+      imageUrl: 'https://cdn.example.com/project.png',
+    });
+
+    const response = await request(app.getHttpServer())
+      .post('/projects/image-upload')
+      .send({
+        fileName: 'project.png',
+        contentType: 'image/png',
+        size: 1024,
+      })
+      .expect(201);
+
+    expect(response.body).toMatchObject({
+      key: 'project-images/123e4567-e89b-12d3-a456-426614174000.png',
+      uploadUrl: 'https://s3.example.com/upload',
+      imageUrl: 'https://cdn.example.com/project.png',
+    });
+    expect(storage.createUpload).toHaveBeenCalledWith({
+      fileName: 'project.png',
+      contentType: 'image/png',
+    });
   });
 
   it('deletes an existing project', async () => {
@@ -215,6 +265,24 @@ describe('ProjectsController', () => {
       .patch('/projects/project-1')
       .send({ title: null })
       .expect(400);
+
+    await request(app.getHttpServer())
+      .post('/projects/image-upload')
+      .send({
+        fileName: 'project.svg',
+        contentType: 'image/svg+xml',
+        size: 1024,
+      })
+      .expect(400);
+
+    await request(app.getHttpServer())
+      .post('/projects/image-upload')
+      .send({
+        fileName: 'project.png',
+        contentType: 'image/png',
+        size: 6 * 1024 * 1024,
+      })
+      .expect(400);
   });
 
   it('maps duplicate slug conflicts, including Prisma P2002, to HTTP 409', async () => {
@@ -245,6 +313,7 @@ describe('ProjectsController', () => {
         repoUrl: null,
         liveUrl: null,
         imageUrl: null,
+        imageKey: null,
       }),
     );
 
@@ -255,6 +324,7 @@ describe('ProjectsController', () => {
         repoUrl: null,
         liveUrl: null,
         imageUrl: null,
+        imageKey: null,
       })
       .expect(200);
 
@@ -263,6 +333,7 @@ describe('ProjectsController', () => {
       repoUrl: null,
       liveUrl: null,
       imageUrl: null,
+      imageKey: null,
     });
     expect(prisma.project.update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -271,8 +342,30 @@ describe('ProjectsController', () => {
           repoUrl: null,
           liveUrl: null,
           imageUrl: null,
+          imageKey: null,
         },
       }),
+    );
+  });
+
+  it('resolves stored project image keys to response image URLs', async () => {
+    prisma.project.findFirst.mockResolvedValue(
+      project({
+        imageUrl: null,
+        imageKey: 'project-images/123e4567-e89b-12d3-a456-426614174000.png',
+      }),
+    );
+
+    const response = await request(app.getHttpServer())
+      .get('/projects/antin-os')
+      .expect(200);
+
+    expect(response.body).toMatchObject({
+      imageKey: 'project-images/123e4567-e89b-12d3-a456-426614174000.png',
+      imageUrl: 'https://cdn.example.com/project.png',
+    });
+    expect(storage.getUrl).toHaveBeenCalledWith(
+      'project-images/123e4567-e89b-12d3-a456-426614174000.png',
     );
   });
 

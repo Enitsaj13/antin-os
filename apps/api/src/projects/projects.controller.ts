@@ -8,6 +8,8 @@ import {
   Patch,
   Post,
 } from '@nestjs/common';
+import type { ProjectImageUpload } from '@antin-os/shared';
+import { CreateProjectImageUploadDto } from './dto/create-project-image-upload.dto';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import type { ProjectResponse } from './project-response';
@@ -19,6 +21,9 @@ type ProjectsOperations = {
   findManaged(idOrSlug: string): Promise<ProjectResponse>;
   update(id: string, dto: UpdateProjectDto): Promise<ProjectResponse>;
   remove(id: string): Promise<ProjectResponse>;
+  createImageUpload(
+    dto: CreateProjectImageUploadDto,
+  ): Promise<ProjectImageUpload>;
   findAllPublic(): Promise<ProjectResponse[]>;
   findPublicBySlug(slug: string): Promise<ProjectResponse>;
 };
@@ -56,6 +61,13 @@ export class ProjectsController {
   @Delete('projects/:id')
   remove(@Param('id') id: string): Promise<ProjectResponse> {
     return this.projectsService.remove(id);
+  }
+
+  @Post('projects/image-upload')
+  createImageUpload(
+    @Body() dto: CreateProjectImageUploadDto,
+  ): Promise<ProjectImageUpload> {
+    return this.projectsService.createImageUpload(dto);
   }
 
   @Get('public/projects')

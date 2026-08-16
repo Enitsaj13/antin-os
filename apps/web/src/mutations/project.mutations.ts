@@ -1,6 +1,11 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { CreateProjectInput, UpdateProjectInput } from '@antin-os/shared';
-import { createProject, deleteProject, updateProject } from '../api-client';
+import {
+  createProject,
+  deleteProject,
+  updateProject,
+  uploadProjectImage,
+} from '../api-client';
 import { projectQueryKeys } from '../queries/project.queries';
 
 export function useCreateProjectMutation() {
@@ -40,5 +45,11 @@ export function useDeleteProjectMutation() {
         queryKey: projectQueryKeys.managedDetail(id),
       });
     },
+  });
+}
+
+export function useUploadProjectImageMutation() {
+  return useMutation({
+    mutationFn: uploadProjectImage,
   });
 }

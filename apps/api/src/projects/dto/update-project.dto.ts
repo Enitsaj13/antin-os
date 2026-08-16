@@ -1,4 +1,8 @@
-import { NON_WHITESPACE_PATTERN, PROJECT_SLUG_PATTERN } from '@antin-os/shared';
+import {
+  NON_WHITESPACE_PATTERN,
+  PROJECT_IMAGE_KEY_PATTERN,
+  PROJECT_SLUG_PATTERN,
+} from '@antin-os/shared';
 import type { UpdateProjectInput } from '@antin-os/shared';
 import {
   ArrayNotEmpty,
@@ -71,6 +75,12 @@ export class UpdateProjectDto implements UpdateProjectInput {
   @Transform(trimString)
   @IsUrl()
   imageUrl?: string | null;
+
+  @ValidateIf((_, value) => value !== undefined && value !== null)
+  @Transform(trimString)
+  @IsString()
+  @Matches(PROJECT_IMAGE_KEY_PATTERN)
+  imageKey?: string | null;
 
   @ValidateIf((_, value) => value !== undefined)
   @IsBoolean()

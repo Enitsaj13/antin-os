@@ -2,9 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { FolderKanban, UserRound } from 'lucide-react';
 import { ProfileAdmin } from './ProfileAdmin';
 import { ProjectFormPage, ProjectsAdmin } from './ProjectAdmin';
+import { PublicProjectDetailPage, PublicProjectsPage } from './PublicProjects';
 import './styles.css';
 
 type Route =
+  | { name: 'public-projects' }
+  | { name: 'public-project-detail'; slug: string }
   | { name: 'profile' }
   | { name: 'projects' }
   | { name: 'new-project' }
@@ -13,6 +16,19 @@ type Route =
 function parseRoute(pathname: string): Route {
   if (pathname === '/' || pathname === '/admin' || pathname === '/admin/') {
     return { name: 'profile' };
+  }
+
+  if (pathname === '/projects') {
+    return { name: 'public-projects' };
+  }
+
+  const publicProjectMatch = pathname.match(/^\/projects\/([^/]+)$/);
+
+  if (publicProjectMatch?.[1]) {
+    return {
+      name: 'public-project-detail',
+      slug: decodeURIComponent(publicProjectMatch[1]),
+    };
   }
 
   if (pathname === '/admin/profile') {
@@ -54,10 +70,25 @@ export function App() {
   }, []);
 
   const route = useMemo(() => parseRoute(pathname), [pathname]);
+  const isPublicRoute =
+    route.name === 'public-projects' || route.name === 'public-project-detail';
   const activeSection = route.name === 'profile' ? 'profile' : 'projects';
 
   function onNavigate(path: string) {
     navigateTo(path);
+  }
+
+  if (isPublicRoute) {
+    return (
+      <>
+        {route.name === 'public-projects' ? (
+          <PublicProjectsPage onNavigate={onNavigate} />
+        ) : null}
+        {route.name === 'public-project-detail' ? (
+          <PublicProjectDetailPage slug={route.slug} onNavigate={onNavigate} />
+        ) : null}
+      </>
+    );
   }
 
   return (

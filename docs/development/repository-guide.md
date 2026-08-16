@@ -38,7 +38,7 @@ DATABASE_URL="postgresql://antin:antin_password@localhost:5432/antin_os?schema=p
 PORT=3001
 ```
 
-Profile picture upload also needs S3 configuration:
+Profile picture upload and project image upload also need S3 configuration:
 
 ```bash
 AWS_REGION=
@@ -48,6 +48,9 @@ AWS_SECRET_ACCESS_KEY=
 AWS_S3_PUBLIC_BASE_URL=
 AWS_S3_PRESIGNED_URL_TTL_SECONDS=900
 ```
+
+Project images use browser-to-S3 presigned uploads. Full AWS setup:
+[AWS S3 Project Images](../operations/aws-s3-project-images.md).
 
 ## Run Locally
 
@@ -68,6 +71,13 @@ The profile admin UI is the web app root:
 
 ```text
 http://localhost:5173/
+```
+
+Portfolio project routes:
+
+```text
+Admin projects: http://localhost:5173/admin/projects
+Public projects: http://localhost:5173/projects
 ```
 
 The OpenSpec change name `add-portfolio-profile-management` is not a browser route.

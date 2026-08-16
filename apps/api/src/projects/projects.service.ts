@@ -1,11 +1,15 @@
 import {
   BadRequestException,
   ConflictException,
+  Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
+import type { ProjectImageUpload } from '@antin-os/shared';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@prisma/prisma.service';
+import { CreateProjectImageUploadDto } from './dto/create-project-image-upload.dto';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import {
@@ -14,6 +18,8 @@ import {
   projectSelect,
   toProjectResponse,
 } from './project-response';
+import { PROJECT_IMAGE_STORAGE } from './storage/project-image-storage';
+import type { ProjectImageStorage } from './storage/project-image-storage';
 
 type ProjectCreateData = Pick<
   Prisma.ProjectCreateInput,
@@ -25,6 +31,7 @@ type ProjectCreateData = Pick<
   | 'repoUrl'
   | 'liveUrl'
   | 'imageUrl'
+  | 'imageKey'
   | 'isPublic'
 >;
 
@@ -32,7 +39,13 @@ type ProjectUpdateData = Partial<ProjectCreateData>;
 
 @Injectable()
 export class ProjectsService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(ProjectsService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(PROJECT_IMAGE_STORAGE)
+    private readonly projectImageStorage: ProjectImageStorage,
+  ) {}
 
   async create(dto: CreateProjectDto): Promise<ProjectResponse> {
     try {
@@ -46,12 +59,13 @@ export class ProjectsService {
           repoUrl: dto.repoUrl,
           liveUrl: dto.liveUrl,
           imageUrl: dto.imageUrl,
+          imageKey: dto.imageKey,
           isPublic: dto.isPublic ?? false,
         } satisfies ProjectCreateData,
         select: projectSelect,
       });
 
-      return toProjectResponse(project);
+      return this.toResponse(project);
     } catch (error) {
       this.handlePrismaWriteError(error);
     }
@@ -63,7 +77,7 @@ export class ProjectsService {
       select: projectSelect,
     });
 
-    return projects.map(toProjectResponse);
+    return Promise.all(projects.map((project) => this.toResponse(project)));
   }
 
   async findManaged(idOrSlug: string): Promise<ProjectResponse> {
@@ -74,7 +88,7 @@ export class ProjectsService {
       select: projectSelect,
     });
 
-    return toProjectResponse(this.requireProject(project));
+    return this.toResponse(this.requireProject(project));
   }
 
   async update(id: string, dto: UpdateProjectDto): Promise<ProjectResponse> {
@@ -95,7 +109,7 @@ export class ProjectsService {
         select: projectSelect,
       });
 
-      return toProjectResponse(project);
+      return this.toResponse(project);
     } catch (error) {
       this.handlePrismaWriteError(error);
     }
@@ -109,7 +123,25 @@ export class ProjectsService {
       select: projectSelect,
     });
 
+    if (project.imageKey) {
+      void this.projectImageStorage.delete(project.imageKey).catch((error) => {
+        this.logger.error(
+          `Failed to delete project image ${project.imageKey}`,
+          error,
+        );
+      });
+    }
+
     return toProjectResponse(project);
+  }
+
+  createImageUpload(
+    dto: CreateProjectImageUploadDto,
+  ): Promise<ProjectImageUpload> {
+    return this.projectImageStorage.createUpload({
+      fileName: dto.fileName,
+      contentType: dto.contentType,
+    });
   }
 
   async findAllPublic(): Promise<ProjectResponse[]> {
@@ -119,7 +151,7 @@ export class ProjectsService {
       select: projectSelect,
     });
 
-    return projects.map(toProjectResponse);
+    return Promise.all(projects.map((project) => this.toResponse(project)));
   }
 
   async findPublicBySlug(slug: string): Promise<ProjectResponse> {
@@ -128,7 +160,7 @@ export class ProjectsService {
       select: projectSelect,
     });
 
-    return toProjectResponse(this.requireProject(project));
+    return this.toResponse(this.requireProject(project));
   }
 
   private toUpdateData(dto: UpdateProjectDto): ProjectUpdateData {
@@ -143,6 +175,7 @@ export class ProjectsService {
       'repoUrl',
       'liveUrl',
       'imageUrl',
+      'imageKey',
       'isPublic',
     ] as const) {
       const value = dto[key];
@@ -172,6 +205,19 @@ export class ProjectsService {
     }
 
     return project;
+  }
+
+  private async toResponse(project: ProjectRecord): Promise<ProjectResponse> {
+    const response = toProjectResponse(project);
+
+    if (!project.imageKey) {
+      return response;
+    }
+
+    return {
+      ...response,
+      imageUrl: await this.projectImageStorage.getUrl(project.imageKey),
+    };
   }
 
   private handlePrismaWriteError(error: unknown): never {
