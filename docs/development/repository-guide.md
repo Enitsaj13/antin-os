@@ -38,6 +38,30 @@ DATABASE_URL="postgresql://antin:antin_password@localhost:5432/antin_os?schema=p
 PORT=3001
 ```
 
+Admin authentication needs a single owner account configured in env:
+
+```bash
+ADMIN_USERNAME=owner@example.com
+ADMIN_PASSWORD_HASH=<generated-password-hash>
+AUTH_SESSION_SECRET=<random-session-secret>
+AUTH_SESSION_TTL_SECONDS=86400
+AUTH_COOKIE_SECURE=false
+AUTH_LOGIN_RATE_LIMIT_MAX=5
+AUTH_LOGIN_RATE_LIMIT_WINDOW_SECONDS=300
+```
+
+Generate a password hash:
+
+```bash
+pnpm --filter api auth:hash-password
+```
+
+Generate a session secret:
+
+```bash
+openssl rand -base64 32
+```
+
 Profile picture upload and project image upload also need S3 configuration:
 
 ```bash

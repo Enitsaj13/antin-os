@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { FolderKanban, UserRound } from 'lucide-react';
+import { FolderKanban, LogOut, UserRound } from 'lucide-react';
+import { useLogoutAdminMutation } from './mutations/auth.mutations';
+import { useAdminSession } from './queries/auth.queries';
+import { LoginAdmin } from './LoginAdmin';
 import { ProfileAdmin } from './ProfileAdmin';
 import { ProjectFormPage, ProjectsAdmin } from './ProjectAdmin';
 import { PublicProjectDetailPage, PublicProjectsPage } from './PublicProjects';
@@ -8,12 +11,22 @@ import './styles.css';
 type Route =
   | { name: 'public-projects' }
   | { name: 'public-project-detail'; slug: string }
+  | { name: 'login'; returnTo: string }
   | { name: 'profile' }
   | { name: 'projects' }
   | { name: 'new-project' }
   | { name: 'edit-project'; id: string };
 
 function parseRoute(pathname: string): Route {
+  if (pathname === '/admin/login') {
+    const params = new URLSearchParams(window.location.search);
+
+    return {
+      name: 'login',
+      returnTo: params.get('returnTo') ?? '/admin/profile',
+    };
+  }
+
   if (pathname === '/' || pathname === '/admin' || pathname === '/admin/') {
     return { name: 'profile' };
   }
@@ -57,6 +70,21 @@ export function navigateTo(path: string) {
   window.dispatchEvent(new Event('popstate'));
 }
 
+function isAdminRoute(route: Route) {
+  return !['public-projects', 'public-project-detail', 'login'].includes(
+    route.name,
+  );
+}
+
+function loginPathFor(pathname: string) {
+  const returnTo =
+    pathname.startsWith('/admin/') && pathname !== '/admin/login'
+      ? pathname
+      : '/admin/profile';
+
+  return `/admin/login?returnTo=${encodeURIComponent(returnTo)}`;
+}
+
 export function App() {
   const [pathname, setPathname] = useState(window.location.pathname);
 
@@ -72,11 +100,29 @@ export function App() {
   const route = useMemo(() => parseRoute(pathname), [pathname]);
   const isPublicRoute =
     route.name === 'public-projects' || route.name === 'public-project-detail';
+  const adminSessionQuery = useAdminSession(!isPublicRoute);
+  const logoutMutation = useLogoutAdminMutation();
+  const isAuthenticated = Boolean(adminSessionQuery.data?.authenticated);
   const activeSection = route.name === 'profile' ? 'profile' : 'projects';
 
   function onNavigate(path: string) {
     navigateTo(path);
   }
+
+  async function logout() {
+    await logoutMutation.mutateAsync();
+    onNavigate('/admin/login');
+  }
+
+  useEffect(() => {
+    if (
+      isAdminRoute(route) &&
+      !adminSessionQuery.isLoading &&
+      !isAuthenticated
+    ) {
+      onNavigate(loginPathFor(window.location.pathname));
+    }
+  }, [adminSessionQuery.isLoading, isAuthenticated, route]);
 
   if (isPublicRoute) {
     return (
@@ -88,6 +134,18 @@ export function App() {
           <PublicProjectDetailPage slug={route.slug} onNavigate={onNavigate} />
         ) : null}
       </>
+    );
+  }
+
+  if (route.name === 'login') {
+    return <LoginAdmin returnTo={route.returnTo} onLogin={onNavigate} />;
+  }
+
+  if (adminSessionQuery.isLoading || !isAuthenticated) {
+    return (
+      <main className="mx-auto max-w-6xl px-5 py-8">
+        <p role="status">Checking admin session</p>
+      </main>
     );
   }
 
@@ -128,6 +186,15 @@ export function App() {
           >
             <FolderKanban size={18} aria-hidden="true" />
             Projects
+          </button>
+          <button
+            className="inline-flex min-h-10 items-center gap-2 border border-slate-400 bg-white px-3 py-2 text-slate-800 hover:border-teal-700 disabled:cursor-not-allowed disabled:opacity-60"
+            type="button"
+            disabled={logoutMutation.isPending}
+            onClick={() => void logout()}
+          >
+            <LogOut size={18} aria-hidden="true" />
+            {logoutMutation.isPending ? 'Signing out' : 'Sign out'}
           </button>
         </nav>
       </header>

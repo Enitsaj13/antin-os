@@ -20,7 +20,10 @@ export async function requestJson<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
-  const response = await fetch(`${apiBaseUrl}${path}`, init);
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    credentials: 'include',
+    ...init,
+  });
 
   if (!response.ok) {
     const body = await response.text();
@@ -34,7 +37,10 @@ export async function requestNullableJson<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T | null> {
-  const response = await fetch(`${apiBaseUrl}${path}`, init);
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    credentials: 'include',
+    ...init,
+  });
 
   if (response.status === 404) {
     return null;
@@ -61,6 +67,7 @@ export function uploadMultipart<T>(
 
     const request = new XMLHttpRequest();
     request.open('POST', `${apiBaseUrl}${path}`);
+    request.withCredentials = true;
 
     request.upload.onprogress = (event) => {
       if (event.lengthComputable) {

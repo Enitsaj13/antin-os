@@ -1,5 +1,6 @@
 export * from './constants/image.constants';
 export * from './constants/project.constants';
+export * from './types/auth.types';
 export * from './types/api.types';
 export * from './types/project.types';
 export * from './types/profile.types';

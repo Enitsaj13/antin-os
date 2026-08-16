@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '@prisma/prisma.module';
+import { AuthModule } from '@src/auth/auth.module';
 import { ProfileController } from './profile.controller';
 import { ProfileImageService } from './profile-image.service';
 import { ProfileService } from './profile.service';
@@ -7,7 +8,7 @@ import { PROFILE_PICTURE_STORAGE } from './storage/profile-picture-storage';
 import { S3ProfilePictureStorage } from './storage/s3-profile-picture-storage';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, AuthModule],
   controllers: [ProfileController],
   providers: [
     ProfileImageService,

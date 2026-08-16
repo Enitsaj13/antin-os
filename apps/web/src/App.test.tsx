@@ -15,16 +15,22 @@ import * as profileQueries from './queries/profile.queries';
 import * as profileMutations from './mutations/profile.mutations';
 import * as projectQueries from './queries/project.queries';
 import * as projectMutations from './mutations/project.mutations';
+import * as authQueries from './queries/auth.queries';
+import * as authMutations from './mutations/auth.mutations';
 
 vi.mock('./queries/profile.queries');
 vi.mock('./mutations/profile.mutations');
 vi.mock('./queries/project.queries');
 vi.mock('./mutations/project.mutations');
+vi.mock('./queries/auth.queries');
+vi.mock('./mutations/auth.mutations');
 
 const mockedProfileQueries = vi.mocked(profileQueries);
 const mockedProfileMutations = vi.mocked(profileMutations);
 const mockedProjectQueries = vi.mocked(projectQueries);
 const mockedProjectMutations = vi.mocked(projectMutations);
+const mockedAuthQueries = vi.mocked(authQueries);
+const mockedAuthMutations = vi.mocked(authMutations);
 
 const uploadProfilePicture = vi.fn();
 const saveProfile = vi.fn();
@@ -33,6 +39,8 @@ const createProject = vi.fn();
 const updateProject = vi.fn();
 const deleteProject = vi.fn();
 const uploadProjectImage = vi.fn();
+const loginAdmin = vi.fn();
+const logoutAdmin = vi.fn();
 const refetchProjects = vi.fn();
 const refetchProject = vi.fn();
 const refetchPublicProjects = vi.fn();
@@ -90,6 +98,9 @@ function resetApiMocks() {
   mockedProjectMutations.useUpdateProjectMutation.mockReset();
   mockedProjectMutations.useDeleteProjectMutation.mockReset();
   mockedProjectMutations.useUploadProjectImageMutation.mockReset();
+  mockedAuthQueries.useAdminSession.mockReset();
+  mockedAuthMutations.useLoginAdminMutation.mockReset();
+  mockedAuthMutations.useLogoutAdminMutation.mockReset();
   saveProfile.mockReset();
   uploadProfilePicture.mockReset();
   removeProfilePicture.mockReset();
@@ -97,6 +108,8 @@ function resetApiMocks() {
   updateProject.mockReset();
   deleteProject.mockReset();
   uploadProjectImage.mockReset();
+  loginAdmin.mockReset();
+  logoutAdmin.mockReset();
   refetchProjects.mockReset();
   refetchProject.mockReset();
   refetchPublicProjects.mockReset();
@@ -130,6 +143,23 @@ function mockProfileHooks(profile: Profile | null = null) {
   } as unknown as ReturnType<
     typeof profileMutations.useRemoveProfilePictureMutation
   >);
+}
+
+function mockAuthHooks(authenticated = true) {
+  mockedAuthQueries.useAdminSession.mockReturnValue({
+    data: authenticated
+      ? { authenticated: true, user: { username: 'owner' } }
+      : { authenticated: false, user: null },
+    isLoading: false,
+  } as ReturnType<typeof authQueries.useAdminSession>);
+  mockedAuthMutations.useLoginAdminMutation.mockReturnValue({
+    mutateAsync: loginAdmin,
+    isPending: false,
+  } as unknown as ReturnType<typeof authMutations.useLoginAdminMutation>);
+  mockedAuthMutations.useLogoutAdminMutation.mockReturnValue({
+    mutateAsync: logoutAdmin,
+    isPending: false,
+  } as unknown as ReturnType<typeof authMutations.useLogoutAdminMutation>);
 }
 
 function project(overrides: Partial<Project> = {}): Project {
@@ -216,6 +246,10 @@ function mockPublicProjectHooks(projects: Project[] = []) {
 function renderApp(path = '/') {
   window.history.pushState({}, '', path);
   const isPublicPath = path === '/projects' || path.startsWith('/projects/');
+
+  if (mockedAuthQueries.useAdminSession() === undefined) {
+    mockAuthHooks(!isPublicPath);
+  }
 
   if (isPublicPath) {
     if (
@@ -366,6 +400,101 @@ describe('admin navigation', () => {
       screen.getByRole('heading', { name: 'Projects' }),
     ).toBeInTheDocument();
   });
+
+  it.each([
+    '/admin/profile',
+    '/admin/projects',
+    '/admin/projects/new',
+    '/admin/projects/project-1/edit',
+  ])(
+    'redirects unauthenticated admin visitors from %s to login with the requested page',
+    async (protectedPath) => {
+      mockAuthHooks(false);
+
+      renderApp(protectedPath);
+
+      await waitFor(() =>
+        expect(window.location.pathname).toBe('/admin/login'),
+      );
+      expect(window.location.search).toBe(
+        `?returnTo=${encodeURIComponent(protectedPath)}`,
+      );
+    },
+  );
+
+  it('returns the owner to the requested admin page after login', async () => {
+    mockAuthHooks(false);
+    loginAdmin.mockImplementation(async () => {
+      mockAuthHooks(true);
+
+      return {
+        authenticated: true,
+        user: { username: 'owner' },
+      };
+    });
+
+    renderApp('/admin/login?returnTo=/admin/projects');
+
+    fireEvent.change(screen.getByLabelText('Username'), {
+      target: { value: 'owner' },
+    });
+    fireEvent.change(screen.getByLabelText('Password'), {
+      target: { value: 'correct-password' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+
+    await waitFor(() =>
+      expect(loginAdmin).toHaveBeenCalledWith({
+        username: 'owner',
+        password: 'correct-password',
+      }),
+    );
+    await waitFor(() =>
+      expect(window.location.pathname).toBe('/admin/projects'),
+    );
+  });
+
+  it('shows safe login errors without exposing credential details', async () => {
+    mockAuthHooks(false);
+    loginAdmin.mockRejectedValue(
+      new Error('{"message":"Invalid credentials","statusCode":401}'),
+    );
+
+    renderApp('/admin/login');
+
+    fireEvent.change(screen.getByLabelText('Username'), {
+      target: { value: 'owner' },
+    });
+    fireEvent.change(screen.getByLabelText('Password'), {
+      target: { value: 'wrong-password' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Invalid username or password.',
+    );
+
+    loginAdmin.mockRejectedValue(
+      new Error('{"message":"Too many login attempts","statusCode":429}'),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Too many login attempts. Try again later.',
+    );
+  });
+
+  it('signs out and returns to the login page', async () => {
+    mockAuthHooks(true);
+    logoutAdmin.mockResolvedValue({ authenticated: false, user: null });
+
+    renderApp('/admin/profile');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+
+    await waitFor(() => expect(logoutAdmin).toHaveBeenCalled());
+    expect(window.location.pathname).toBe('/admin/login');
+  });
 });
 
 describe('public projects', () => {
@@ -387,6 +516,7 @@ describe('public projects', () => {
 
     renderApp('/projects');
 
+    expect(mockedAuthQueries.useAdminSession).toHaveBeenCalledWith(false);
     expect(
       screen.getByRole('heading', { name: 'Projects' }),
     ).toBeInTheDocument();

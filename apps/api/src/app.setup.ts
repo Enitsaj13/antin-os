@@ -12,6 +12,7 @@ function getCorsOrigins() {
 export function configureApp(app: INestApplication) {
   app.enableCors({
     origin: getCorsOrigins(),
+    credentials: true,
   });
 
   app.useGlobalPipes(

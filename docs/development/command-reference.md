@@ -32,6 +32,13 @@ make prisma-generate  # regenerate Prisma client
 make db-studio        # open Prisma Studio
 ```
 
+Useful direct setup commands:
+
+```bash
+pnpm --filter api auth:hash-password # generate ADMIN_PASSWORD_HASH
+openssl rand -base64 32              # generate AUTH_SESSION_SECRET
+```
+
 ## Quality
 
 ```bash

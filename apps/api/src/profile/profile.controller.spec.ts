@@ -5,6 +5,7 @@ import { App } from 'supertest/types';
 import request from 'supertest';
 import sharp from 'sharp';
 import { configureApp } from '@src/app.setup';
+import { createPasswordHash } from '@src/auth/password-hash';
 import { ProfileModule } from './profile.module';
 import { PROFILE_PICTURE_STORAGE } from './storage/profile-picture-storage';
 import type { ProfilePictureStorage } from './storage/profile-picture-storage';
@@ -70,6 +71,7 @@ describe('ProfileController', () => {
   let app: INestApplication<App>;
   let prisma: MockPrismaService;
   let storage: jest.Mocked<ProfilePictureStorage>;
+  let owner: ReturnType<typeof request.agent>;
   let jpeg: Buffer;
   let png: Buffer;
   let webp: Buffer;
@@ -119,6 +121,13 @@ describe('ProfileController', () => {
   });
 
   beforeEach(async () => {
+    process.env.ADMIN_USERNAME = 'owner';
+    process.env.ADMIN_PASSWORD_HASH = createPasswordHash('correct-password');
+    process.env.AUTH_SESSION_SECRET = 'test-session-secret';
+    process.env.AUTH_COOKIE_SECURE = 'false';
+    process.env.AUTH_LOGIN_RATE_LIMIT_MAX = '5';
+    process.env.AUTH_LOGIN_RATE_LIMIT_WINDOW_SECONDS = '300';
+
     prisma = createMockPrisma();
     storage = createMockStorage();
     storage.upload.mockResolvedValue({ key: 'profile-pictures/new.webp' });
@@ -137,23 +146,44 @@ describe('ProfileController', () => {
     app = moduleFixture.createNestApplication();
     configureApp(app);
     await app.init();
+
+    owner = request.agent(app.getHttpServer());
+    await owner
+      .post('/auth/login')
+      .send({ username: 'owner', password: 'correct-password' })
+      .expect(201);
   });
 
   afterEach(async () => {
     await app?.close();
   });
 
-  it('creates and updates the singleton profile', async () => {
-    prisma.profile.upsert.mockResolvedValue(profile());
-
-    const first = await request(app.getHttpServer())
-      .put('/profile')
-      .send(validProfileRequest)
-      .expect(200);
+  it('rejects unauthenticated profile management without mutating state', async () => {
+    await request(app.getHttpServer()).get('/profile').expect(401);
     await request(app.getHttpServer())
       .put('/profile')
       .send(validProfileRequest)
+      .expect(401);
+    await request(app.getHttpServer())
+      .post('/profile/picture')
+      .attach('file', jpeg, 'picture.jpg')
+      .expect(401);
+    await request(app.getHttpServer()).delete('/profile/picture').expect(401);
+
+    expect(prisma.profile.upsert).not.toHaveBeenCalled();
+    expect(prisma.profile.update).not.toHaveBeenCalled();
+    expect(storage.upload).not.toHaveBeenCalled();
+    expect(storage.delete).not.toHaveBeenCalled();
+  });
+
+  it('creates and updates the singleton profile', async () => {
+    prisma.profile.upsert.mockResolvedValue(profile());
+
+    const first = await owner
+      .put('/profile')
+      .send(validProfileRequest)
       .expect(200);
+    await owner.put('/profile').send(validProfileRequest).expect(200);
 
     const firstBody = first.body as ProfileResponse;
 
@@ -174,16 +204,16 @@ describe('ProfileController', () => {
   });
 
   it('rejects invalid profile fields', async () => {
-    await request(app.getHttpServer()).put('/profile').send({}).expect(400);
-    await request(app.getHttpServer())
+    await owner.put('/profile').send({}).expect(400);
+    await owner
       .put('/profile')
       .send({ ...validProfileRequest, fullName: '   ' })
       .expect(400);
-    await request(app.getHttpServer())
+    await owner
       .put('/profile')
       .send({ ...validProfileRequest, email: 'not-email' })
       .expect(400);
-    await request(app.getHttpServer())
+    await owner
       .put('/profile')
       .send({ ...validProfileRequest, githubUrl: 'not-url' })
       .expect(400);
@@ -192,7 +222,7 @@ describe('ProfileController', () => {
   it('returns not found before a profile exists', async () => {
     prisma.profile.findUnique.mockResolvedValue(null);
 
-    await request(app.getHttpServer()).get('/profile').expect(404);
+    await owner.get('/profile').expect(404);
     await request(app.getHttpServer()).get('/public/profile').expect(404);
   });
 
@@ -201,9 +231,7 @@ describe('ProfileController', () => {
       profile({ profilePictureKey: 'profile-pictures/current.webp' }),
     );
 
-    const managed = await request(app.getHttpServer())
-      .get('/profile')
-      .expect(200);
+    const managed = await owner.get('/profile').expect(200);
     const publicProfile = await request(app.getHttpServer())
       .get('/public/profile')
       .expect(200);
@@ -231,7 +259,7 @@ describe('ProfileController', () => {
         profile({ profilePictureKey: 'profile-pictures/new.webp' }),
       );
 
-      await request(app.getHttpServer())
+      await owner
         .post('/profile/picture')
         .attach('file', getBuffer(), filename)
         .expect(201);
@@ -251,27 +279,27 @@ describe('ProfileController', () => {
   it('rejects invalid image content, unsupported formats, empty files, oversized files, and non-square output', async () => {
     prisma.profile.findUnique.mockResolvedValue(profile());
 
-    await request(app.getHttpServer())
+    await owner
       .post('/profile/picture')
       .attach('file', Buffer.from('not-an-image'), 'fake.jpg')
       .expect(415);
 
-    await request(app.getHttpServer())
+    await owner
       .post('/profile/picture')
       .attach('file', Buffer.from('GIF89a'), 'fake.gif')
       .expect(415);
 
-    await request(app.getHttpServer())
+    await owner
       .post('/profile/picture')
       .attach('file', Buffer.alloc(0), 'empty.png')
       .expect(400);
 
-    await request(app.getHttpServer())
+    await owner
       .post('/profile/picture')
       .attach('file', Buffer.alloc(5 * 1024 * 1024 + 1), 'large.png')
       .expect(413);
 
-    await request(app.getHttpServer())
+    await owner
       .post('/profile/picture')
       .attach('file', nonSquare, 'wide.png')
       .expect(400);
@@ -283,7 +311,7 @@ describe('ProfileController', () => {
       profile({ profilePictureKey: 'profile-pictures/new.webp' }),
     );
 
-    const response = await request(app.getHttpServer())
+    const response = await owner
       .post('/profile/picture')
       .attach('file', jpeg, 'picture.jpg')
       .expect(201);
@@ -301,7 +329,7 @@ describe('ProfileController', () => {
   it('returns not found from picture upload when no profile exists', async () => {
     prisma.profile.findUnique.mockResolvedValue(null);
 
-    await request(app.getHttpServer())
+    await owner
       .post('/profile/picture')
       .attach('file', jpeg, 'picture.jpg')
       .expect(404);
@@ -317,7 +345,7 @@ describe('ProfileController', () => {
       profile({ profilePictureKey: 'profile-pictures/new.webp' }),
     );
 
-    await request(app.getHttpServer())
+    await owner
       .post('/profile/picture')
       .attach('file', jpeg, 'picture.jpg')
       .expect(201);
@@ -333,7 +361,7 @@ describe('ProfileController', () => {
     );
     prisma.profile.update.mockRejectedValue(new Error('database failed'));
 
-    await request(app.getHttpServer())
+    await owner
       .post('/profile/picture')
       .attach('file', jpeg, 'picture.jpg')
       .expect(500);
@@ -352,7 +380,7 @@ describe('ProfileController', () => {
     );
     storage.delete.mockRejectedValueOnce(new Error('cleanup failed'));
 
-    await request(app.getHttpServer())
+    await owner
       .post('/profile/picture')
       .attach('file', jpeg, 'picture.jpg')
       .expect(201);
@@ -366,20 +394,18 @@ describe('ProfileController', () => {
       profile({ profilePictureKey: null }),
     );
 
-    await request(app.getHttpServer()).delete('/profile/picture').expect(200);
+    await owner.delete('/profile/picture').expect(200);
     expect(storage.delete.mock.calls).toContainEqual([
       'profile-pictures/current.webp',
     ]);
 
     prisma.profile.findUnique.mockResolvedValueOnce(null);
-    await request(app.getHttpServer()).delete('/profile/picture').expect(404);
+    await owner.delete('/profile/picture').expect(404);
 
     prisma.profile.findUnique.mockResolvedValueOnce(
       profile({ profilePictureKey: null }),
     );
-    const response = await request(app.getHttpServer())
-      .delete('/profile/picture')
-      .expect(200);
+    const response = await owner.delete('/profile/picture').expect(200);
     const body = response.body as ProfileResponse;
     expect(body.profilePictureUrl).toBeNull();
   });

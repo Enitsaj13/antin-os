@@ -6,9 +6,11 @@ import {
   Post,
   Put,
   UploadedFile,
+  UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { OwnerAuthGuard } from '@src/auth/owner-auth.guard';
 import { memoryStorage } from 'multer';
 import { MAX_PROFILE_PICTURE_BYTES } from './profile.constants';
 import { UpsertProfileDto } from './dto/upsert-profile.dto';
@@ -20,16 +22,19 @@ export class ProfileController {
   constructor(private readonly profileService: ProfileService) {}
 
   @Get('profile')
+  @UseGuards(OwnerAuthGuard)
   getManagedProfile(): Promise<ProfileResponse> {
     return this.profileService.getManagedProfile();
   }
 
   @Put('profile')
+  @UseGuards(OwnerAuthGuard)
   upsertProfile(@Body() dto: UpsertProfileDto): Promise<ProfileResponse> {
     return this.profileService.upsertProfile(dto);
   }
 
   @Post('profile/picture')
+  @UseGuards(OwnerAuthGuard)
   @UseInterceptors(
     FileInterceptor('file', {
       storage: memoryStorage(),
@@ -43,6 +48,7 @@ export class ProfileController {
   }
 
   @Delete('profile/picture')
+  @UseGuards(OwnerAuthGuard)
   removePicture(): Promise<ProfileResponse> {
     return this.profileService.removePicture();
   }
