@@ -8,13 +8,15 @@ import {
 } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
+import { validateExperienceForm } from './ExperienceAdmin';
 import { constrainCrop, CropState, OUTPUT_SIZE } from './crop';
-import type { Profile } from '@antin-os/shared';
-import type { Project } from '@antin-os/shared';
+import type { Experience, Profile, Project } from '@antin-os/shared';
 import * as profileQueries from './queries/profile.queries';
 import * as profileMutations from './mutations/profile.mutations';
 import * as projectQueries from './queries/project.queries';
 import * as projectMutations from './mutations/project.mutations';
+import * as experienceQueries from './queries/experience.queries';
+import * as experienceMutations from './mutations/experience.mutations';
 import * as authQueries from './queries/auth.queries';
 import * as authMutations from './mutations/auth.mutations';
 
@@ -22,6 +24,8 @@ vi.mock('./queries/profile.queries');
 vi.mock('./mutations/profile.mutations');
 vi.mock('./queries/project.queries');
 vi.mock('./mutations/project.mutations');
+vi.mock('./queries/experience.queries');
+vi.mock('./mutations/experience.mutations');
 vi.mock('./queries/auth.queries');
 vi.mock('./mutations/auth.mutations');
 
@@ -29,6 +33,8 @@ const mockedProfileQueries = vi.mocked(profileQueries);
 const mockedProfileMutations = vi.mocked(profileMutations);
 const mockedProjectQueries = vi.mocked(projectQueries);
 const mockedProjectMutations = vi.mocked(projectMutations);
+const mockedExperienceQueries = vi.mocked(experienceQueries);
+const mockedExperienceMutations = vi.mocked(experienceMutations);
 const mockedAuthQueries = vi.mocked(authQueries);
 const mockedAuthMutations = vi.mocked(authMutations);
 
@@ -39,6 +45,10 @@ const createProject = vi.fn();
 const updateProject = vi.fn();
 const deleteProject = vi.fn();
 const uploadProjectImage = vi.fn();
+const createExperience = vi.fn();
+const updateExperience = vi.fn();
+const deleteExperience = vi.fn();
+const reorderExperiences = vi.fn();
 const loginAdmin = vi.fn();
 const logoutAdmin = vi.fn();
 const refetchPublicProfile = vi.fn();
@@ -46,6 +56,9 @@ const refetchProjects = vi.fn();
 const refetchProject = vi.fn();
 const refetchPublicProjects = vi.fn();
 const refetchPublicProject = vi.fn();
+const refetchExperiences = vi.fn();
+const refetchExperience = vi.fn();
+const refetchPublicExperiences = vi.fn();
 
 class MockImage {
   width = 1000;
@@ -100,6 +113,13 @@ function resetApiMocks() {
   mockedProjectMutations.useUpdateProjectMutation.mockReset();
   mockedProjectMutations.useDeleteProjectMutation.mockReset();
   mockedProjectMutations.useUploadProjectImageMutation.mockReset();
+  mockedExperienceQueries.useExperiences.mockReset();
+  mockedExperienceQueries.useExperience.mockReset();
+  mockedExperienceQueries.usePublicExperiences.mockReset();
+  mockedExperienceMutations.useCreateExperienceMutation.mockReset();
+  mockedExperienceMutations.useUpdateExperienceMutation.mockReset();
+  mockedExperienceMutations.useDeleteExperienceMutation.mockReset();
+  mockedExperienceMutations.useReorderExperiencesMutation.mockReset();
   mockedAuthQueries.useAdminSession.mockReset();
   mockedAuthMutations.useLoginAdminMutation.mockReset();
   mockedAuthMutations.useLogoutAdminMutation.mockReset();
@@ -110,6 +130,10 @@ function resetApiMocks() {
   updateProject.mockReset();
   deleteProject.mockReset();
   uploadProjectImage.mockReset();
+  createExperience.mockReset();
+  updateExperience.mockReset();
+  deleteExperience.mockReset();
+  reorderExperiences.mockReset();
   loginAdmin.mockReset();
   logoutAdmin.mockReset();
   refetchPublicProfile.mockReset();
@@ -117,6 +141,9 @@ function resetApiMocks() {
   refetchProject.mockReset();
   refetchPublicProjects.mockReset();
   refetchPublicProject.mockReset();
+  refetchExperiences.mockReset();
+  refetchExperience.mockReset();
+  refetchPublicExperiences.mockReset();
 }
 
 function file(type = 'image/png') {
@@ -205,6 +232,27 @@ function project(overrides: Partial<Project> = {}): Project {
   };
 }
 
+function experience(overrides: Partial<Experience> = {}): Experience {
+  return {
+    id: 'experience-1',
+    company: 'StepCast',
+    role: 'Lead Mobile Developer',
+    location: 'Remote',
+    employmentType: 'Contract',
+    startDate: '2025-01-01T00:00:00.000Z',
+    endDate: null,
+    isCurrent: true,
+    summary: 'Built the Expo consumer guide app.',
+    achievements: ['Built guided playback', 'Shipped TestFlight builds'],
+    technologies: ['Expo', 'React Native', 'TypeScript'],
+    displayOrder: 0,
+    isPublic: true,
+    createdAt: '2026-08-13T10:00:00.000Z',
+    updatedAt: '2026-08-14T10:00:00.000Z',
+    ...overrides,
+  };
+}
+
 function mockProjectHooks(projects: Project[] = []) {
   mockedProjectQueries.useProjects.mockReturnValue({
     data: projects,
@@ -246,6 +294,51 @@ function mockProjectHooks(projects: Project[] = []) {
   >);
 }
 
+function mockExperienceHooks(experiences: Experience[] = []) {
+  mockedExperienceQueries.useExperiences.mockReturnValue({
+    data: experiences,
+    isLoading: false,
+    isError: false,
+    error: null,
+    refetch: refetchExperiences,
+  } as unknown as ReturnType<typeof experienceQueries.useExperiences>);
+  mockedExperienceQueries.useExperience.mockImplementation((id: string) => {
+    const found = experiences.find((candidate) => candidate.id === id);
+
+    return {
+      data: found ?? null,
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: refetchExperience,
+    } as unknown as ReturnType<typeof experienceQueries.useExperience>;
+  });
+  mockedExperienceMutations.useCreateExperienceMutation.mockReturnValue({
+    mutateAsync: createExperience,
+    isPending: false,
+  } as unknown as ReturnType<
+    typeof experienceMutations.useCreateExperienceMutation
+  >);
+  mockedExperienceMutations.useUpdateExperienceMutation.mockReturnValue({
+    mutateAsync: updateExperience,
+    isPending: false,
+  } as unknown as ReturnType<
+    typeof experienceMutations.useUpdateExperienceMutation
+  >);
+  mockedExperienceMutations.useDeleteExperienceMutation.mockReturnValue({
+    mutateAsync: deleteExperience,
+    isPending: false,
+  } as unknown as ReturnType<
+    typeof experienceMutations.useDeleteExperienceMutation
+  >);
+  mockedExperienceMutations.useReorderExperiencesMutation.mockReturnValue({
+    mutateAsync: reorderExperiences,
+    isPending: false,
+  } as unknown as ReturnType<
+    typeof experienceMutations.useReorderExperiencesMutation
+  >);
+}
+
 function mockPublicProjectHooks(projects: Project[] = []) {
   mockedProjectQueries.usePublicProjects.mockReturnValue({
     data: projects,
@@ -267,6 +360,16 @@ function mockPublicProjectHooks(projects: Project[] = []) {
   });
 }
 
+function mockPublicExperienceHooks(experiences: Experience[] = []) {
+  mockedExperienceQueries.usePublicExperiences.mockReturnValue({
+    data: experiences,
+    isLoading: false,
+    isError: false,
+    error: null,
+    refetch: refetchPublicExperiences,
+  } as unknown as ReturnType<typeof experienceQueries.usePublicExperiences>);
+}
+
 function renderApp(path = '/') {
   window.history.pushState({}, '', path);
 
@@ -277,8 +380,10 @@ beforeEach(() => {
   mockAuthHooks(true);
   mockProfileHooks();
   mockProjectHooks();
+  mockExperienceHooks();
   mockPublicProfileHook();
   mockPublicProjectHooks();
+  mockPublicExperienceHooks();
 });
 
 afterEach(() => {
@@ -400,7 +505,7 @@ describe('profile admin', () => {
 });
 
 describe('admin navigation', () => {
-  it('routes profile management to /admin/profile and navigates to projects', () => {
+  it('routes profile management to /admin/profile and navigates to portfolio sections', () => {
     renderApp('/admin/profile');
 
     expect(
@@ -416,11 +521,19 @@ describe('admin navigation', () => {
     expect(
       screen.getByRole('heading', { name: 'Projects' }),
     ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Experience' }));
+
+    expect(window.location.pathname).toBe('/admin/experience');
+    expect(
+      screen.getByRole('heading', { name: 'Experience' }),
+    ).toBeInTheDocument();
   });
 
   it.each([
     '/admin/profile',
     '/admin/projects',
+    '/admin/experience',
     '/admin/projects/new',
     '/admin/projects/project-1/edit',
   ])(
@@ -528,15 +641,28 @@ describe('public homepage', () => {
     mockedProjectQueries.useProject.mockImplementation(() => {
       throw new Error('Managed project query should not run on public pages');
     });
+    mockedExperienceQueries.useExperiences.mockImplementation(() => {
+      throw new Error(
+        'Managed experience query should not run on public pages',
+      );
+    });
+    mockedExperienceQueries.useExperience.mockImplementation(() => {
+      throw new Error(
+        'Managed experience detail should not run on public pages',
+      );
+    });
 
     renderApp('/');
 
     expect(mockedAuthQueries.useAdminSession).toHaveBeenCalledWith(false);
     expect(mockedProfileQueries.usePublicProfile).toHaveBeenCalled();
     expect(mockedProjectQueries.usePublicProjects).toHaveBeenCalled();
+    expect(mockedExperienceQueries.usePublicExperiences).toHaveBeenCalled();
     expect(mockedProfileQueries.useProfile).not.toHaveBeenCalled();
     expect(mockedProjectQueries.useProjects).not.toHaveBeenCalled();
     expect(mockedProjectQueries.useProject).not.toHaveBeenCalled();
+    expect(mockedExperienceQueries.useExperiences).not.toHaveBeenCalled();
+    expect(mockedExperienceQueries.useExperience).not.toHaveBeenCalled();
     expect(
       screen.getByRole('heading', { name: 'Jastine Formentera' }),
     ).toBeInTheDocument();
@@ -574,6 +700,7 @@ describe('public homepage', () => {
       techStack: ['TypeScript'],
     });
     mockPublicProfileHook();
+    mockPublicExperienceHooks([experience()]);
     mockPublicProjectHooks([
       featuredProject,
       mobileProject,
@@ -621,6 +748,14 @@ describe('public homepage', () => {
       within(skills as HTMLElement).getByText('React'),
     ).toBeInTheDocument();
 
+    expect(screen.getByText('Lead Mobile Developer')).toBeInTheDocument();
+    expect(screen.getByText('StepCast')).toBeInTheDocument();
+    expect(
+      screen.getByText('Built the Expo consumer guide app.'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Built guided playback')).toBeInTheDocument();
+    expect(screen.getByText('Current')).toBeInTheDocument();
+
     expect(screen.getByText('Portfolio API')).toBeInTheDocument();
     expect(screen.getByText('Mobile Guide')).toBeInTheDocument();
     expect(screen.getByText('AWS Uploads')).toBeInTheDocument();
@@ -657,6 +792,13 @@ describe('public homepage', () => {
       error: null,
       refetch: refetchPublicProjects,
     } as unknown as ReturnType<typeof projectQueries.usePublicProjects>);
+    mockedExperienceQueries.usePublicExperiences.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      isError: false,
+      error: null,
+      refetch: refetchPublicExperiences,
+    } as unknown as ReturnType<typeof experienceQueries.usePublicExperiences>);
     mockedProjectQueries.usePublicProject.mockReturnValue({
       data: null,
       isLoading: false,
@@ -669,6 +811,7 @@ describe('public homepage', () => {
 
     expect(screen.getByText('Loading profile')).toBeInTheDocument();
     expect(screen.getByText('Loading projects')).toBeInTheDocument();
+    expect(screen.getByText('Loading experience')).toBeInTheDocument();
 
     mockedProfileQueries.usePublicProfile.mockReturnValue({
       data: null,
@@ -684,6 +827,13 @@ describe('public homepage', () => {
       error: null,
       refetch: refetchPublicProjects,
     } as unknown as ReturnType<typeof projectQueries.usePublicProjects>);
+    mockedExperienceQueries.usePublicExperiences.mockReturnValue({
+      data: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: refetchPublicExperiences,
+    } as unknown as ReturnType<typeof experienceQueries.usePublicExperiences>);
     rerender(<App />);
 
     expect(
@@ -696,6 +846,9 @@ describe('public homepage', () => {
       screen.getByText(
         'Skills will appear when public projects are available.',
       ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('No public experience entries are available.'),
     ).toBeInTheDocument();
 
     mockedProfileQueries.usePublicProfile.mockReturnValue({
@@ -712,14 +865,50 @@ describe('public homepage', () => {
       error: new Error('projects failed'),
       refetch: refetchPublicProjects,
     } as unknown as ReturnType<typeof projectQueries.usePublicProjects>);
+    mockedExperienceQueries.usePublicExperiences.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error('experience failed'),
+      refetch: refetchPublicExperiences,
+    } as unknown as ReturnType<typeof experienceQueries.usePublicExperiences>);
     rerender(<App />);
 
     expect(screen.getByText('profile failed')).toBeInTheDocument();
     expect(screen.getByText('projects failed')).toBeInTheDocument();
+    expect(screen.getByText('experience failed')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Retry profile' }));
     fireEvent.click(screen.getByRole('button', { name: 'Retry projects' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Retry experience' }));
     expect(refetchPublicProfile).toHaveBeenCalled();
     expect(refetchPublicProjects).toHaveBeenCalled();
+    expect(refetchPublicExperiences).toHaveBeenCalled();
+  });
+
+  it('shows public homepage timeline in public order and hides unpublished entries defensively', () => {
+    mockPublicExperienceHooks([
+      experience({
+        id: 'experience-1',
+        company: 'StepCast',
+        role: 'Lead Mobile Developer',
+        displayOrder: 0,
+        isPublic: true,
+      }),
+      experience({
+        id: 'experience-2',
+        company: 'Hidden Co',
+        role: 'Internal Role',
+        displayOrder: 1,
+        isPublic: false,
+      }),
+    ]);
+
+    renderApp('/');
+
+    expect(screen.getByText('Lead Mobile Developer')).toBeInTheDocument();
+    expect(screen.getByText('StepCast')).toBeInTheDocument();
+    expect(screen.queryByText('Internal Role')).not.toBeInTheDocument();
+    expect(screen.queryByText('Hidden Co')).not.toBeInTheDocument();
   });
 
   it('sets route-aware public metadata', async () => {
@@ -1087,6 +1276,287 @@ describe('projects admin list', () => {
 
     fireEvent.click(
       screen.getAllByRole('button', { name: 'Delete Portfolio API' })[0],
+    );
+
+    const dialog = screen.getByRole('dialog');
+    expect(
+      within(dialog).getByRole('button', { name: 'Cancel' }),
+    ).toBeDisabled();
+    expect(
+      within(dialog).getByRole('button', { name: 'Deleting' }),
+    ).toBeDisabled();
+  });
+});
+
+describe('experience admin', () => {
+  it('shows loading, empty, and error states with retry', () => {
+    mockedExperienceQueries.useExperiences.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      isError: false,
+      error: null,
+      refetch: refetchExperiences,
+    } as unknown as ReturnType<typeof experienceQueries.useExperiences>);
+
+    const { rerender } = renderApp('/admin/experience');
+
+    expect(screen.getByRole('status')).toHaveTextContent('Loading experience');
+
+    mockedExperienceQueries.useExperiences.mockReturnValue({
+      data: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: refetchExperiences,
+    } as unknown as ReturnType<typeof experienceQueries.useExperiences>);
+    rerender(<App />);
+
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'No experience entries are available.',
+    );
+
+    mockedExperienceQueries.useExperiences.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error('experience load failed'),
+      refetch: refetchExperiences,
+    } as unknown as ReturnType<typeof experienceQueries.useExperiences>);
+    rerender(<App />);
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'experience load failed',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(refetchExperiences).toHaveBeenCalled();
+  });
+
+  it('creates private experience entries with normalized fields and client validation', async () => {
+    createExperience.mockResolvedValue(experience({ isPublic: false }));
+
+    renderApp('/admin/experience');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findAllByText('This field is required.')).toHaveLength(
+      4,
+    );
+    expect(screen.getByText('Start date is required.')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Achievements')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Technologies')).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Company'), {
+      target: { value: ' StepCast ' },
+    });
+    fireEvent.change(screen.getByLabelText('Role'), {
+      target: { value: ' Lead Mobile Developer ' },
+    });
+    fireEvent.change(screen.getByLabelText('Location'), {
+      target: { value: ' Remote ' },
+    });
+    fireEvent.change(screen.getByLabelText('Employment type'), {
+      target: { value: 'Contract' },
+    });
+    fireEvent.change(screen.getByLabelText('Start date'), {
+      target: { value: '2025-01-01' },
+    });
+    fireEvent.change(screen.getByLabelText('Summary'), {
+      target: { value: ' Built the app. ' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() =>
+      expect(createExperience).toHaveBeenCalledWith({
+        company: 'StepCast',
+        role: 'Lead Mobile Developer',
+        location: 'Remote',
+        employmentType: 'Contract',
+        startDate: '2025-01-01',
+        endDate: null,
+        isCurrent: false,
+        summary: 'Built the app.',
+        achievements: [],
+        technologies: [],
+        displayOrder: 0,
+        isPublic: false,
+      }),
+    );
+  });
+
+  it('validates date rules, current-role exclusivity, and display order', async () => {
+    const errors = validateExperienceForm({
+      company: 'Company',
+      role: 'Role',
+      location: 'Remote',
+      employmentType: 'Full-time',
+      startDate: '2025-01-01',
+      endDate: '2024-01-01',
+      isCurrent: false,
+      summary: 'Summary',
+      displayOrder: '-1',
+      isPublic: false,
+    });
+
+    expect(errors.endDate).toBe('End date cannot be before start date.');
+    expect(errors.displayOrder).toBe(
+      'Display order must be a non-negative integer.',
+    );
+
+    renderApp('/admin/experience');
+
+    fireEvent.input(screen.getByLabelText('End date'), {
+      target: { value: '2026-01-01' },
+    });
+    fireEvent.click(screen.getByLabelText('Current role'));
+
+    expect(screen.getByLabelText('End date')).toBeDisabled();
+    expect(screen.getByLabelText('End date')).toHaveValue('');
+  });
+
+  it('edits, publishes, deletes, and reorders experience entries', async () => {
+    const first = experience();
+    const second = experience({
+      id: 'experience-2',
+      company: 'AntinOS',
+      role: 'Full-stack Developer',
+      isCurrent: false,
+      endDate: '2026-01-01T00:00:00.000Z',
+      isPublic: false,
+      displayOrder: 1,
+    });
+    mockExperienceHooks([first, second]);
+    updateExperience.mockResolvedValue(
+      experience({ role: 'Senior Mobile Developer' }),
+    );
+    deleteExperience.mockResolvedValue(second);
+    reorderExperiences.mockResolvedValue([second, first]);
+
+    renderApp('/admin/experience');
+
+    expect(screen.getAllByText('StepCast')[0]).toBeInTheDocument();
+    expect(screen.getAllByText('Lead Mobile Developer')[0]).toBeInTheDocument();
+    expect(screen.getAllByText('Contract')[0]).toBeInTheDocument();
+    expect(screen.getAllByText('Public, Current')[0]).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getAllByRole('button', {
+        name: 'Publish Full-stack Developer at AntinOS',
+      })[0],
+    );
+    await waitFor(() =>
+      expect(updateExperience).toHaveBeenCalledWith({
+        id: 'experience-2',
+        input: { isPublic: true },
+      }),
+    );
+
+    fireEvent.click(
+      screen.getAllByRole('button', {
+        name: 'Edit Lead Mobile Developer at StepCast',
+      })[0],
+    );
+    expect(screen.getByLabelText('Company')).toHaveValue('StepCast');
+    fireEvent.change(screen.getByLabelText('Role'), {
+      target: { value: 'Senior Mobile Developer' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() =>
+      expect(updateExperience).toHaveBeenCalledWith({
+        id: 'experience-1',
+        input: expect.objectContaining({ role: 'Senior Mobile Developer' }),
+      }),
+    );
+
+    fireEvent.click(
+      screen.getAllByRole('button', {
+        name: 'Move Lead Mobile Developer at StepCast down',
+      })[0],
+    );
+    await waitFor(() =>
+      expect(reorderExperiences).toHaveBeenCalledWith({
+        items: [
+          { id: 'experience-2', displayOrder: 0 },
+          { id: 'experience-1', displayOrder: 1 },
+        ],
+      }),
+    );
+
+    fireEvent.click(
+      screen.getAllByRole('button', {
+        name: 'Delete Full-stack Developer at AntinOS',
+      })[0],
+    );
+    expect(screen.getByRole('dialog')).toHaveTextContent(
+      'Delete Full-stack Developer at AntinOS?',
+    );
+    fireEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', {
+        name: 'Delete',
+      }),
+    );
+
+    await waitFor(() =>
+      expect(deleteExperience).toHaveBeenCalledWith('experience-2'),
+    );
+  });
+
+  it('keeps entries visible and displays API errors when deletion or reorder fails', async () => {
+    mockExperienceHooks([experience()]);
+    deleteExperience.mockRejectedValue(new Error('delete failed'));
+    reorderExperiences.mockRejectedValue(new Error('reorder failed'));
+
+    renderApp('/admin/experience');
+
+    fireEvent.click(
+      screen.getAllByRole('button', {
+        name: 'Delete Lead Mobile Developer at StepCast',
+      })[0],
+    );
+    fireEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', {
+        name: 'Delete',
+      }),
+    );
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('delete failed');
+    expect(screen.getAllByText('StepCast')[0]).toBeInTheDocument();
+  });
+
+  it('disables duplicate submissions while experience mutations are pending', () => {
+    mockExperienceHooks([experience()]);
+    mockedExperienceMutations.useCreateExperienceMutation.mockReturnValue({
+      mutateAsync: createExperience,
+      isPending: true,
+    } as unknown as ReturnType<
+      typeof experienceMutations.useCreateExperienceMutation
+    >);
+    mockedExperienceMutations.useDeleteExperienceMutation.mockReturnValue({
+      mutateAsync: deleteExperience,
+      isPending: true,
+    } as unknown as ReturnType<
+      typeof experienceMutations.useDeleteExperienceMutation
+    >);
+    mockedExperienceMutations.useReorderExperiencesMutation.mockReturnValue({
+      mutateAsync: reorderExperiences,
+      isPending: true,
+    } as unknown as ReturnType<
+      typeof experienceMutations.useReorderExperiencesMutation
+    >);
+
+    renderApp('/admin/experience');
+
+    expect(screen.getByRole('button', { name: 'Saving' })).toBeDisabled();
+    expect(
+      screen.getAllByRole('button', {
+        name: 'Move Lead Mobile Developer at StepCast down',
+      })[0],
+    ).toBeDisabled();
+
+    fireEvent.click(
+      screen.getAllByRole('button', {
+        name: 'Delete Lead Mobile Developer at StepCast',
+      })[0],
     );
 
     const dialog = screen.getByRole('dialog');

@@ -41,3 +41,23 @@ model Profile {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 }
+
+model Experience {
+  id             String   @id @default(cuid())
+  company        String
+  role           String
+  location       String
+  employmentType String
+  startDate      DateTime
+  endDate        DateTime?
+  isCurrent      Boolean  @default(false)
+  summary        String
+  achievements   String[]
+  technologies   String[]
+  displayOrder   Int
+  isPublic       Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([isPublic, displayOrder, startDate])
+}

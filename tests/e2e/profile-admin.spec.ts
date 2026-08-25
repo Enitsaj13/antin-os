@@ -64,6 +64,32 @@ test('loads the public homepage without an admin session', async ({ page }) => {
     });
   });
 
+  await page.route('http://localhost:3001/public/experience', async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: corsHeaders,
+      json: [
+        {
+          id: 'experience-1',
+          company: 'StepCast',
+          role: 'Lead Mobile Developer',
+          location: 'Remote',
+          employmentType: 'Contract',
+          startDate: '2025-01-01T00:00:00.000Z',
+          endDate: null,
+          isCurrent: true,
+          summary: 'Built the Expo consumer guide app.',
+          achievements: ['Built guided playback'],
+          technologies: ['Expo', 'React Native'],
+          displayOrder: 0,
+          isPublic: true,
+          createdAt: '2026-08-13T10:00:00.000Z',
+          updatedAt: '2026-08-14T10:00:00.000Z',
+        },
+      ],
+    });
+  });
+
   await page.goto('/');
 
   await expect(page).toHaveURL(/\/$/);
@@ -75,9 +101,151 @@ test('loads the public homepage without an admin session', async ({ page }) => {
     page.getByRole('link', { name: 'View Portfolio API project details' }),
   ).toBeVisible();
   await expect(
+    page.getByRole('heading', { name: 'Work timeline' }),
+  ).toBeVisible();
+  await expect(page.getByText('Lead Mobile Developer')).toBeVisible();
+  await expect(page.getByText('Built guided playback')).toBeVisible();
+  await expect(
     page.getByRole('heading', { level: 1, name: 'Portfolio management' }),
   ).toHaveCount(0);
   expect(authSessionRequests).toBe(0);
+});
+
+test('lets an authenticated owner manage and reorder experience entries', async ({
+  page,
+}) => {
+  let updatePayload: unknown = null;
+  let reorderPayload: unknown = null;
+  const experiences = [
+    {
+      id: 'experience-1',
+      company: 'StepCast',
+      role: 'Lead Mobile Developer',
+      location: 'Remote',
+      employmentType: 'Contract',
+      startDate: '2025-01-01T00:00:00.000Z',
+      endDate: null,
+      isCurrent: true,
+      summary: 'Built the Expo consumer guide app.',
+      achievements: ['Built guided playback'],
+      technologies: ['Expo', 'React Native'],
+      displayOrder: 0,
+      isPublic: true,
+      createdAt: '2026-08-13T10:00:00.000Z',
+      updatedAt: '2026-08-14T10:00:00.000Z',
+    },
+    {
+      id: 'experience-2',
+      company: 'AntinOS',
+      role: 'Full-stack Developer',
+      location: 'Manila',
+      employmentType: 'Full-time',
+      startDate: '2024-01-01T00:00:00.000Z',
+      endDate: '2024-12-01T00:00:00.000Z',
+      isCurrent: false,
+      summary: 'Built portfolio systems.',
+      achievements: ['Shipped admin tools'],
+      technologies: ['React', 'NestJS'],
+      displayOrder: 1,
+      isPublic: false,
+      createdAt: '2026-08-13T10:00:00.000Z',
+      updatedAt: '2026-08-14T10:00:00.000Z',
+    },
+  ];
+
+  await page.route('http://localhost:3001/auth/session', async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: corsHeaders,
+      json: { authenticated: true, user: { username: 'owner' } },
+    });
+  });
+
+  await page.route('http://localhost:3001/experience**', async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+
+    if (request.method() === 'OPTIONS') {
+      await route.fulfill({ status: 204, headers: corsHeaders });
+      return;
+    }
+
+    if (url.pathname === '/experience' && request.method() === 'GET') {
+      await route.fulfill({
+        status: 200,
+        headers: corsHeaders,
+        json: experiences,
+      });
+      return;
+    }
+
+    if (
+      url.pathname === '/experience/reorder' &&
+      request.method() === 'PATCH'
+    ) {
+      reorderPayload = request.postDataJSON();
+      await route.fulfill({
+        status: 200,
+        headers: corsHeaders,
+        json: experiences,
+      });
+      return;
+    }
+
+    if (
+      url.pathname === '/experience/experience-2' &&
+      request.method() === 'PATCH'
+    ) {
+      updatePayload = request.postDataJSON();
+      experiences[1] = {
+        ...experiences[1],
+        isPublic: true,
+      };
+      await route.fulfill({
+        status: 200,
+        headers: corsHeaders,
+        json: experiences[1],
+      });
+      return;
+    }
+
+    await route.fulfill({
+      status: 404,
+      headers: corsHeaders,
+      body: '',
+    });
+  });
+
+  await page.goto('/admin/experience');
+
+  await expect(
+    page.getByRole('heading', { level: 1, name: 'Portfolio management' }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Experience', exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText('Lead Mobile Developer').first()).toBeVisible();
+
+  await page
+    .getByRole('button', { name: 'Publish Full-stack Developer at AntinOS' })
+    .first()
+    .click();
+  await expect.poll(() => updatePayload).toEqual({ isPublic: true });
+
+  await page
+    .getByRole('button', {
+      name: 'Move Lead Mobile Developer at StepCast down',
+    })
+    .first()
+    .click();
+  await expect
+    .poll(() => reorderPayload)
+    .toEqual({
+      items: [
+        { id: 'experience-2', displayOrder: 0 },
+        { id: 'experience-1', displayOrder: 1 },
+      ],
+    });
 });
 
 test('redirects to login and returns to the profile admin form after login', async ({

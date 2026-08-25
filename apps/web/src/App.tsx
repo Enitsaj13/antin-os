@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
-import { FolderKanban, LogOut, UserRound } from 'lucide-react';
+import {
+  BriefcaseBusiness,
+  FolderKanban,
+  LogOut,
+  UserRound,
+} from 'lucide-react';
 import { useLogoutAdminMutation } from './mutations/auth.mutations';
 import { useAdminSession } from './queries/auth.queries';
+import { ExperienceAdmin } from './ExperienceAdmin';
 import { LoginAdmin } from './LoginAdmin';
 import { ProfileAdmin } from './ProfileAdmin';
 import { ProjectFormPage, ProjectsAdmin } from './ProjectAdmin';
@@ -16,6 +22,7 @@ type Route =
   | { name: 'login'; returnTo: string }
   | { name: 'profile' }
   | { name: 'projects' }
+  | { name: 'experience' }
   | { name: 'new-project' }
   | { name: 'edit-project'; id: string };
 
@@ -56,6 +63,10 @@ function parseRoute(pathname: string): Route {
 
   if (pathname === '/admin/projects') {
     return { name: 'projects' };
+  }
+
+  if (pathname === '/admin/experience') {
+    return { name: 'experience' };
   }
 
   if (pathname === '/admin/projects/new') {
@@ -114,7 +125,12 @@ export function App() {
   const adminSessionQuery = useAdminSession(!isPublicRoute);
   const logoutMutation = useLogoutAdminMutation();
   const isAuthenticated = Boolean(adminSessionQuery.data?.authenticated);
-  const activeSection = route.name === 'profile' ? 'profile' : 'projects';
+  const activeSection =
+    route.name === 'profile'
+      ? 'profile'
+      : route.name === 'experience'
+        ? 'experience'
+        : 'projects';
 
   function onNavigate(path: string) {
     navigateTo(path);
@@ -202,6 +218,19 @@ export function App() {
             Projects
           </button>
           <button
+            className={`inline-flex min-h-10 items-center gap-2 border px-3 py-2 ${
+              activeSection === 'experience'
+                ? 'border-teal-700 bg-teal-700 text-white'
+                : 'border-slate-400 bg-white text-slate-800 hover:border-teal-700'
+            }`}
+            type="button"
+            aria-current={activeSection === 'experience' ? 'page' : undefined}
+            onClick={() => onNavigate('/admin/experience')}
+          >
+            <BriefcaseBusiness size={18} aria-hidden="true" />
+            Experience
+          </button>
+          <button
             className="inline-flex min-h-10 items-center gap-2 border border-slate-400 bg-white px-3 py-2 text-slate-800 hover:border-teal-700 disabled:cursor-not-allowed disabled:opacity-60"
             type="button"
             disabled={logoutMutation.isPending}
@@ -217,6 +246,7 @@ export function App() {
       {route.name === 'projects' ? (
         <ProjectsAdmin onNavigate={onNavigate} />
       ) : null}
+      {route.name === 'experience' ? <ExperienceAdmin /> : null}
       {route.name === 'new-project' ? (
         <ProjectFormPage mode="create" onNavigate={onNavigate} />
       ) : null}

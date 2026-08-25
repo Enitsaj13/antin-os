@@ -6,6 +6,7 @@ import { HealthModule } from '@src/health/health.module';
 import { ProjectsModule } from './projects/projects.module';
 import { ProfileModule } from './profile/profile.module';
 import { AuthModule } from './auth/auth.module';
+import { ExperienceModule } from './experience/experience.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { AuthModule } from './auth/auth.module';
     AuthModule,
     ProjectsModule,
     ProfileModule,
+    ExperienceModule,
   ],
   controllers: [AppController],
   providers: [AppService],

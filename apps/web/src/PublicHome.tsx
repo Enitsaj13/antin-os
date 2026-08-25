@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from 'react';
 import {
   ArrowRight,
+  BriefcaseBusiness,
   ExternalLink,
   Github,
   Linkedin,
@@ -8,8 +9,9 @@ import {
   MapPin,
   RotateCcw,
 } from 'lucide-react';
-import type { Project } from '@antin-os/shared';
+import type { Experience, Project } from '@antin-os/shared';
 import { usePublicProfile } from './queries/profile.queries';
+import { usePublicExperiences } from './queries/experience.queries';
 import { usePublicProjects } from './queries/project.queries';
 import { setDocumentMetadata } from './metadata';
 
@@ -54,6 +56,29 @@ function uniqueSkills(projects: Project[]) {
   );
 }
 
+function formatTimelineDate(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat('en', {
+    month: 'short',
+    year: 'numeric',
+  }).format(date);
+}
+
+function formatExperienceRange(experience: Experience) {
+  const endDate = experience.isCurrent
+    ? 'Present'
+    : experience.endDate
+      ? formatTimelineDate(experience.endDate)
+      : 'Present';
+
+  return `${formatTimelineDate(experience.startDate)} - ${endDate}`;
+}
+
 function ProjectImage({ project }: { project: Project }) {
   if (!project.imageUrl) {
     return null;
@@ -86,8 +111,12 @@ function TechStack({ values }: { values: string[] }) {
 export function PublicHomePage({ onNavigate }: { onNavigate: Navigate }) {
   const profileQuery = usePublicProfile();
   const projectsQuery = usePublicProjects();
+  const experienceQuery = usePublicExperiences();
   const profile = profileQuery.data;
   const projects = projectsQuery.data ?? [];
+  const experiences = (experienceQuery.data ?? []).filter(
+    (experience) => experience.isPublic,
+  );
   const highlightedProjects = projects.slice(0, 3);
   const skills = useMemo(() => uniqueSkills(projects), [projects]);
 
@@ -233,6 +262,100 @@ export function PublicHomePage({ onNavigate }: { onNavigate: Navigate }) {
             </p>
           ) : null}
         </aside>
+      </section>
+
+      <section className="mt-8 grid gap-5" aria-labelledby="experience-heading">
+        <div>
+          <p className="m-0 text-sm font-semibold uppercase tracking-wide text-teal-700">
+            Experience
+          </p>
+          <h2
+            id="experience-heading"
+            className="m-0 text-[28px] font-semibold text-slate-950"
+          >
+            Work timeline
+          </h2>
+        </div>
+
+        {experienceQuery.isLoading ? (
+          <p role="status">Loading experience</p>
+        ) : null}
+
+        {experienceQuery.isError ? (
+          <div
+            className="grid gap-3 border border-red-300 bg-red-50 p-4"
+            role="alert"
+          >
+            <p className="m-0">
+              {errorMessage(
+                experienceQuery.error,
+                'Could not load experience.',
+              )}
+            </p>
+            <button
+              className={BUTTON_CLASS}
+              type="button"
+              onClick={() => void experienceQuery.refetch()}
+            >
+              <RotateCcw size={18} aria-hidden="true" />
+              Retry experience
+            </button>
+          </div>
+        ) : null}
+
+        {!experienceQuery.isLoading && !experienceQuery.isError ? (
+          experiences.length > 0 ? (
+            <ol className="m-0 grid list-none gap-4 p-0">
+              {experiences.map((experience) => (
+                <li
+                  className="grid gap-3 border-l-4 border-teal-700 bg-white py-4 pl-4 pr-5 md:grid-cols-[180px_1fr]"
+                  key={experience.id}
+                >
+                  <div className="grid content-start gap-2 text-slate-700">
+                    <span className="inline-flex items-center gap-2 font-medium text-slate-950">
+                      <BriefcaseBusiness size={18} aria-hidden="true" />
+                      {formatExperienceRange(experience)}
+                    </span>
+                    <span>{experience.employmentType}</span>
+                    {experience.location ? (
+                      <span>{experience.location}</span>
+                    ) : null}
+                    {experience.isCurrent ? (
+                      <span className="max-w-max border border-teal-700 px-2 py-1 text-sm font-medium text-teal-800">
+                        Current
+                      </span>
+                    ) : null}
+                  </div>
+                  <article className="grid gap-3">
+                    <div>
+                      <h3 className="m-0 text-xl font-semibold text-slate-950">
+                        {experience.role}
+                      </h3>
+                      <p className="m-0 mt-1 text-slate-700">
+                        {experience.company}
+                      </p>
+                    </div>
+                    <p className="m-0 whitespace-pre-line leading-7 text-slate-700">
+                      {experience.summary}
+                    </p>
+                    {experience.achievements.length > 0 ? (
+                      <ul className="m-0 grid gap-2 pl-5 text-slate-700">
+                        {experience.achievements.map((achievement) => (
+                          <li key={achievement}>{achievement}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    {experience.technologies.length > 0 ? (
+                      <TechStack values={experience.technologies} />
+                    ) : null}
+                  </article>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p role="status">No public experience entries are available.</p>
+          )
+        ) : null}
       </section>
 
       <section className="mt-8 grid gap-5" aria-labelledby="projects-heading">
