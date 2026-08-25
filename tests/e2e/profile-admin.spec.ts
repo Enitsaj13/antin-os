@@ -8,6 +8,78 @@ const corsHeaders = {
   'Content-Type': 'application/json',
 };
 
+test('loads the public homepage without an admin session', async ({ page }) => {
+  let authSessionRequests = 0;
+
+  await page.route('http://localhost:3001/auth/session', async (route) => {
+    authSessionRequests += 1;
+    await route.fulfill({
+      status: 200,
+      headers: corsHeaders,
+      json: { authenticated: false, user: null },
+    });
+  });
+
+  await page.route('http://localhost:3001/public/profile', async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: corsHeaders,
+      json: {
+        id: 'profile-1',
+        fullName: 'Jastine Formentera',
+        headline: 'Full-stack developer',
+        biography: 'I build useful web and mobile products.',
+        location: 'Manila, Philippines',
+        email: 'jastine@example.com',
+        githubUrl: 'https://github.com/Enitsaj13',
+        linkedinUrl: 'https://linkedin.com/in/jastine',
+        profilePictureUrl: 'https://example.com/profile.webp',
+        createdAt: '2026-08-13T10:00:00.000Z',
+        updatedAt: '2026-08-14T10:00:00.000Z',
+      },
+    });
+  });
+
+  await page.route('http://localhost:3001/public/projects', async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: corsHeaders,
+      json: [
+        {
+          id: 'project-1',
+          title: 'Portfolio API',
+          slug: 'portfolio-api',
+          summary: 'A portfolio API',
+          description: 'Detailed description',
+          techStack: ['NestJS', 'Prisma'],
+          repoUrl: 'https://github.com/example/repo',
+          liveUrl: 'https://example.com',
+          imageUrl: 'https://example.com/image.png',
+          imageKey: null,
+          isPublic: true,
+          createdAt: '2026-08-13T10:00:00.000Z',
+          updatedAt: '2026-08-14T10:00:00.000Z',
+        },
+      ],
+    });
+  });
+
+  await page.goto('/');
+
+  await expect(page).toHaveURL(/\/$/);
+  await expect(
+    page.getByRole('heading', { level: 1, name: 'Jastine Formentera' }),
+  ).toBeVisible();
+  await expect(page.getByText('Full-stack developer')).toBeVisible();
+  await expect(
+    page.getByRole('link', { name: 'View Portfolio API project details' }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('heading', { level: 1, name: 'Portfolio management' }),
+  ).toHaveCount(0);
+  expect(authSessionRequests).toBe(0);
+});
+
 test('redirects to login and returns to the profile admin form after login', async ({
   page,
 }) => {
@@ -50,7 +122,7 @@ test('redirects to login and returns to the profile admin form after login', asy
 
   await page.goto('/admin/profile');
 
-  await expect(page).toHaveTitle(/AntinOS Profile Admin/);
+  await expect(page).toHaveTitle(/AntinOS Portfolio/);
   await expect(page).toHaveURL(/\/admin\/login\?returnTo=%2Fadmin%2Fprofile$/);
   await expect(
     page.getByRole('heading', { level: 1, name: 'Sign in' }),

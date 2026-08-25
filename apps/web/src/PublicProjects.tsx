@@ -1,6 +1,8 @@
+import { useEffect } from 'react';
 import { ArrowLeft, ExternalLink, RotateCcw } from 'lucide-react';
 import type { Project } from '@antin-os/shared';
 import { usePublicProject, usePublicProjects } from './queries/project.queries';
+import { setDocumentMetadata } from './metadata';
 
 type Navigate = (path: string) => void;
 
@@ -69,6 +71,13 @@ function TechStack({ values }: { values: string[] }) {
 export function PublicProjectsPage({ onNavigate }: { onNavigate: Navigate }) {
   const projectsQuery = usePublicProjects();
   const projects = projectsQuery.data ?? [];
+
+  useEffect(() => {
+    setDocumentMetadata(
+      'Projects | AntinOS Portfolio',
+      'Browse selected published portfolio projects and technical work.',
+    );
+  }, []);
 
   return (
     <main className={PAGE_CLASS}>
@@ -153,6 +162,15 @@ export function PublicProjectDetailPage({
   const project = projectQuery.data;
   const isNotFound =
     projectQuery.isError && isNotFoundError(projectQuery.error);
+
+  useEffect(() => {
+    setDocumentMetadata(
+      project
+        ? `${project.title} | AntinOS Portfolio`
+        : 'Project | AntinOS Portfolio',
+      project?.summary ?? 'View a published AntinOS portfolio project.',
+    );
+  }, [project]);
 
   return (
     <main className={PAGE_CLASS}>

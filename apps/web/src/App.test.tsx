@@ -6,7 +6,7 @@ import {
   waitFor,
   within,
 } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
 import { constrainCrop, CropState, OUTPUT_SIZE } from './crop';
 import type { Profile } from '@antin-os/shared';
@@ -41,6 +41,7 @@ const deleteProject = vi.fn();
 const uploadProjectImage = vi.fn();
 const loginAdmin = vi.fn();
 const logoutAdmin = vi.fn();
+const refetchPublicProfile = vi.fn();
 const refetchProjects = vi.fn();
 const refetchProject = vi.fn();
 const refetchPublicProjects = vi.fn();
@@ -87,6 +88,7 @@ Object.defineProperty(HTMLCanvasElement.prototype, 'toBlob', {
 
 function resetApiMocks() {
   mockedProfileQueries.useProfile.mockReset();
+  mockedProfileQueries.usePublicProfile.mockReset();
   mockedProfileMutations.useSaveProfileMutation.mockReset();
   mockedProfileMutations.useUploadProfilePictureMutation.mockReset();
   mockedProfileMutations.useRemoveProfilePictureMutation.mockReset();
@@ -110,17 +112,12 @@ function resetApiMocks() {
   uploadProjectImage.mockReset();
   loginAdmin.mockReset();
   logoutAdmin.mockReset();
+  refetchPublicProfile.mockReset();
   refetchProjects.mockReset();
   refetchProject.mockReset();
   refetchPublicProjects.mockReset();
   refetchPublicProject.mockReset();
 }
-
-afterEach(() => {
-  cleanup();
-  resetApiMocks();
-  window.history.pushState({}, '', '/');
-});
 
 function file(type = 'image/png') {
   return new File(['source'], 'source.png', { type });
@@ -160,6 +157,33 @@ function mockAuthHooks(authenticated = true) {
     mutateAsync: logoutAdmin,
     isPending: false,
   } as unknown as ReturnType<typeof authMutations.useLogoutAdminMutation>);
+}
+
+function publicProfile(overrides: Partial<Profile> = {}): Profile {
+  return {
+    id: 'profile-1',
+    fullName: 'Jastine Formentera',
+    headline: 'Full-stack developer',
+    biography: 'I build useful web and mobile products.',
+    location: 'Manila, Philippines',
+    email: 'jastine@example.com',
+    githubUrl: 'https://github.com/Enitsaj13',
+    linkedinUrl: 'https://linkedin.com/in/jastine',
+    profilePictureUrl: 'https://example.com/profile.webp',
+    createdAt: '2026-08-13T10:00:00.000Z',
+    updatedAt: '2026-08-14T10:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function mockPublicProfileHook(profile: Profile | null = publicProfile()) {
+  mockedProfileQueries.usePublicProfile.mockReturnValue({
+    data: profile,
+    isLoading: false,
+    isError: false,
+    error: null,
+    refetch: refetchPublicProfile,
+  } as unknown as ReturnType<typeof profileQueries.usePublicProfile>);
 }
 
 function project(overrides: Partial<Project> = {}): Project {
@@ -245,34 +269,27 @@ function mockPublicProjectHooks(projects: Project[] = []) {
 
 function renderApp(path = '/') {
   window.history.pushState({}, '', path);
-  const isPublicPath = path === '/projects' || path.startsWith('/projects/');
-
-  if (mockedAuthQueries.useAdminSession() === undefined) {
-    mockAuthHooks(!isPublicPath);
-  }
-
-  if (isPublicPath) {
-    if (
-      mockedProjectQueries.usePublicProjects() === undefined ||
-      mockedProjectQueries.usePublicProject('') === undefined
-    ) {
-      mockPublicProjectHooks();
-    }
-  } else {
-    if (mockedProfileQueries.useProfile() === undefined) {
-      mockProfileHooks();
-    }
-
-    if (
-      mockedProjectQueries.useProjects() === undefined ||
-      mockedProjectQueries.useProject('') === undefined
-    ) {
-      mockProjectHooks();
-    }
-  }
 
   return render(<App />);
 }
+
+beforeEach(() => {
+  mockAuthHooks(true);
+  mockProfileHooks();
+  mockProjectHooks();
+  mockPublicProfileHook();
+  mockPublicProjectHooks();
+});
+
+afterEach(() => {
+  cleanup();
+  resetApiMocks();
+  window.history.pushState({}, '', '/');
+  document.title = 'AntinOS Portfolio';
+  document
+    .querySelector('meta[name="description"]')
+    ?.setAttribute('content', '');
+});
 
 describe('profile admin', () => {
   it('canceling crop performs no upload', async () => {
@@ -494,6 +511,248 @@ describe('admin navigation', () => {
 
     await waitFor(() => expect(logoutAdmin).toHaveBeenCalled());
     expect(window.location.pathname).toBe('/admin/login');
+  });
+});
+
+describe('public homepage', () => {
+  it('renders the public homepage at / without admin authentication or admin form content', () => {
+    mockAuthHooks(false);
+    mockPublicProfileHook();
+    mockPublicProjectHooks([project()]);
+    mockedProfileQueries.useProfile.mockImplementation(() => {
+      throw new Error('Managed profile query should not run on public pages');
+    });
+    mockedProjectQueries.useProjects.mockImplementation(() => {
+      throw new Error('Managed projects query should not run on public pages');
+    });
+    mockedProjectQueries.useProject.mockImplementation(() => {
+      throw new Error('Managed project query should not run on public pages');
+    });
+
+    renderApp('/');
+
+    expect(mockedAuthQueries.useAdminSession).toHaveBeenCalledWith(false);
+    expect(mockedProfileQueries.usePublicProfile).toHaveBeenCalled();
+    expect(mockedProjectQueries.usePublicProjects).toHaveBeenCalled();
+    expect(mockedProfileQueries.useProfile).not.toHaveBeenCalled();
+    expect(mockedProjectQueries.useProjects).not.toHaveBeenCalled();
+    expect(mockedProjectQueries.useProject).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole('heading', { name: 'Jastine Formentera' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText('Full name')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: 'Portfolio management' }),
+    ).not.toBeInTheDocument();
+    expect(window.location.pathname).toBe('/');
+  });
+
+  it('shows profile content, contact links, derived skills, selected projects, and navigation', () => {
+    const featuredProject = project({
+      techStack: ['NestJS', 'Prisma', 'React'],
+    });
+    const mobileProject = project({
+      id: 'project-2',
+      title: 'Mobile Guide',
+      slug: 'mobile-guide',
+      summary: 'Expo guide app',
+      techStack: ['React', 'Expo'],
+      imageUrl: null,
+    });
+    const extraProject = project({
+      id: 'project-3',
+      title: 'AWS Uploads',
+      slug: 'aws-uploads',
+      summary: 'S3 image upload flow',
+      techStack: ['AWS', 'NestJS'],
+    });
+    const hiddenFromHighlights = project({
+      id: 'project-4',
+      title: 'Fourth Project',
+      slug: 'fourth-project',
+      summary: 'Not highlighted',
+      techStack: ['TypeScript'],
+    });
+    mockPublicProfileHook();
+    mockPublicProjectHooks([
+      featuredProject,
+      mobileProject,
+      extraProject,
+      hiddenFromHighlights,
+    ]);
+
+    renderApp('/');
+
+    expect(
+      screen.getByAltText('Jastine Formentera profile picture'),
+    ).toHaveAttribute('src', 'https://example.com/profile.webp');
+    expect(screen.getByText('Full-stack developer')).toBeInTheDocument();
+    expect(
+      screen.getByText('I build useful web and mobile products.'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Manila, Philippines')).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: 'jastine@example.com' }),
+    ).toHaveAttribute('href', 'mailto:jastine@example.com');
+    expect(
+      screen.getByRole('link', {
+        name: 'Open Jastine Formentera GitHub profile',
+      }),
+    ).toHaveAttribute('href', 'https://github.com/Enitsaj13');
+    expect(
+      screen.getByRole('link', {
+        name: 'Open Jastine Formentera LinkedIn profile',
+      }),
+    ).toHaveAttribute('href', 'https://linkedin.com/in/jastine');
+
+    const skills = screen
+      .getByRole('heading', { name: 'Skills' })
+      .closest('aside');
+    expect(skills).not.toBeNull();
+    expect(within(skills as HTMLElement).getByText('AWS')).toBeInTheDocument();
+    expect(within(skills as HTMLElement).getByText('Expo')).toBeInTheDocument();
+    expect(
+      within(skills as HTMLElement).getByText('NestJS'),
+    ).toBeInTheDocument();
+    expect(
+      within(skills as HTMLElement).getByText('Prisma'),
+    ).toBeInTheDocument();
+    expect(
+      within(skills as HTMLElement).getByText('React'),
+    ).toBeInTheDocument();
+
+    expect(screen.getByText('Portfolio API')).toBeInTheDocument();
+    expect(screen.getByText('Mobile Guide')).toBeInTheDocument();
+    expect(screen.getByText('AWS Uploads')).toBeInTheDocument();
+    expect(screen.queryByText('Fourth Project')).not.toBeInTheDocument();
+    expect(screen.getByAltText('Portfolio API project image')).toHaveAttribute(
+      'src',
+      'https://example.com/image.png',
+    );
+    expect(
+      screen.queryByAltText('Mobile Guide project image'),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('link', { name: 'View all projects' }));
+    expect(window.location.pathname).toBe('/projects');
+
+    fireEvent.click(
+      screen.getByRole('link', { name: 'View Portfolio API project details' }),
+    );
+    expect(window.location.pathname).toBe('/projects/portfolio-api');
+  });
+
+  it('handles loading, missing-profile, empty-project, API-error, and retry states', () => {
+    mockedProfileQueries.usePublicProfile.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      isError: false,
+      error: null,
+      refetch: refetchPublicProfile,
+    } as unknown as ReturnType<typeof profileQueries.usePublicProfile>);
+    mockedProjectQueries.usePublicProjects.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      isError: false,
+      error: null,
+      refetch: refetchPublicProjects,
+    } as unknown as ReturnType<typeof projectQueries.usePublicProjects>);
+    mockedProjectQueries.usePublicProject.mockReturnValue({
+      data: null,
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: refetchPublicProject,
+    } as unknown as ReturnType<typeof projectQueries.usePublicProject>);
+
+    const { rerender } = renderApp('/');
+
+    expect(screen.getByText('Loading profile')).toBeInTheDocument();
+    expect(screen.getByText('Loading projects')).toBeInTheDocument();
+
+    mockedProfileQueries.usePublicProfile.mockReturnValue({
+      data: null,
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: refetchPublicProfile,
+    } as unknown as ReturnType<typeof profileQueries.usePublicProfile>);
+    mockedProjectQueries.usePublicProjects.mockReturnValue({
+      data: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: refetchPublicProjects,
+    } as unknown as ReturnType<typeof projectQueries.usePublicProjects>);
+    rerender(<App />);
+
+    expect(
+      screen.getByText('Profile information is not available yet.'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('No public projects are available.'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Skills will appear when public projects are available.',
+      ),
+    ).toBeInTheDocument();
+
+    mockedProfileQueries.usePublicProfile.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error('profile failed'),
+      refetch: refetchPublicProfile,
+    } as unknown as ReturnType<typeof profileQueries.usePublicProfile>);
+    mockedProjectQueries.usePublicProjects.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error('projects failed'),
+      refetch: refetchPublicProjects,
+    } as unknown as ReturnType<typeof projectQueries.usePublicProjects>);
+    rerender(<App />);
+
+    expect(screen.getByText('profile failed')).toBeInTheDocument();
+    expect(screen.getByText('projects failed')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry profile' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Retry projects' }));
+    expect(refetchPublicProfile).toHaveBeenCalled();
+    expect(refetchPublicProjects).toHaveBeenCalled();
+  });
+
+  it('sets route-aware public metadata', async () => {
+    mockPublicProfileHook();
+    mockPublicProjectHooks([project()]);
+
+    renderApp('/');
+
+    expect(document.title).toBe('Jastine Formentera | Portfolio');
+    expect(
+      document
+        .querySelector('meta[name="description"]')
+        ?.getAttribute('content'),
+    ).toContain('Full-stack developer');
+
+    fireEvent.click(screen.getByRole('link', { name: 'View all projects' }));
+    expect(window.location.pathname).toBe('/projects');
+    await waitFor(() =>
+      expect(document.title).toBe('Projects | AntinOS Portfolio'),
+    );
+
+    fireEvent.click(
+      screen.getByRole('link', { name: 'View Portfolio API project details' }),
+    );
+    expect(window.location.pathname).toBe('/projects/portfolio-api');
+    await waitFor(() =>
+      expect(document.title).toBe('Portfolio API | AntinOS Portfolio'),
+    );
+    expect(
+      document
+        .querySelector('meta[name="description"]')
+        ?.getAttribute('content'),
+    ).toBe('A portfolio API');
   });
 });
 

@@ -5,10 +5,12 @@ import { useAdminSession } from './queries/auth.queries';
 import { LoginAdmin } from './LoginAdmin';
 import { ProfileAdmin } from './ProfileAdmin';
 import { ProjectFormPage, ProjectsAdmin } from './ProjectAdmin';
+import { PublicHomePage } from './PublicHome';
 import { PublicProjectDetailPage, PublicProjectsPage } from './PublicProjects';
 import './styles.css';
 
 type Route =
+  | { name: 'home' }
   | { name: 'public-projects' }
   | { name: 'public-project-detail'; slug: string }
   | { name: 'login'; returnTo: string }
@@ -18,6 +20,10 @@ type Route =
   | { name: 'edit-project'; id: string };
 
 function parseRoute(pathname: string): Route {
+  if (pathname === '/') {
+    return { name: 'home' };
+  }
+
   if (pathname === '/admin/login') {
     const params = new URLSearchParams(window.location.search);
 
@@ -27,7 +33,7 @@ function parseRoute(pathname: string): Route {
     };
   }
 
-  if (pathname === '/' || pathname === '/admin' || pathname === '/admin/') {
+  if (pathname === '/admin' || pathname === '/admin/') {
     return { name: 'profile' };
   }
 
@@ -62,7 +68,7 @@ function parseRoute(pathname: string): Route {
     return { name: 'edit-project', id: decodeURIComponent(editMatch[1]) };
   }
 
-  return { name: 'profile' };
+  return { name: 'home' };
 }
 
 export function navigateTo(path: string) {
@@ -71,9 +77,12 @@ export function navigateTo(path: string) {
 }
 
 function isAdminRoute(route: Route) {
-  return !['public-projects', 'public-project-detail', 'login'].includes(
-    route.name,
-  );
+  return ![
+    'home',
+    'public-projects',
+    'public-project-detail',
+    'login',
+  ].includes(route.name);
 }
 
 function loginPathFor(pathname: string) {
@@ -99,7 +108,9 @@ export function App() {
 
   const route = useMemo(() => parseRoute(pathname), [pathname]);
   const isPublicRoute =
-    route.name === 'public-projects' || route.name === 'public-project-detail';
+    route.name === 'home' ||
+    route.name === 'public-projects' ||
+    route.name === 'public-project-detail';
   const adminSessionQuery = useAdminSession(!isPublicRoute);
   const logoutMutation = useLogoutAdminMutation();
   const isAuthenticated = Boolean(adminSessionQuery.data?.authenticated);
@@ -127,6 +138,9 @@ export function App() {
   if (isPublicRoute) {
     return (
       <>
+        {route.name === 'home' ? (
+          <PublicHomePage onNavigate={onNavigate} />
+        ) : null}
         {route.name === 'public-projects' ? (
           <PublicProjectsPage onNavigate={onNavigate} />
         ) : null}
