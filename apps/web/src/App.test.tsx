@@ -10,13 +10,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
 import { validateExperienceForm } from './ExperienceAdmin';
 import { constrainCrop, CropState, OUTPUT_SIZE } from './crop';
-import type { Experience, Profile, Project } from '@antin-os/shared';
+import type {
+  Experience,
+  Profile,
+  Project,
+  PublicResume,
+  Resume,
+} from '@antin-os/shared';
 import * as profileQueries from './queries/profile.queries';
 import * as profileMutations from './mutations/profile.mutations';
 import * as projectQueries from './queries/project.queries';
 import * as projectMutations from './mutations/project.mutations';
 import * as experienceQueries from './queries/experience.queries';
 import * as experienceMutations from './mutations/experience.mutations';
+import * as resumeQueries from './queries/resume.queries';
+import * as resumeMutations from './mutations/resume.mutations';
 import * as authQueries from './queries/auth.queries';
 import * as authMutations from './mutations/auth.mutations';
 
@@ -26,6 +34,8 @@ vi.mock('./queries/project.queries');
 vi.mock('./mutations/project.mutations');
 vi.mock('./queries/experience.queries');
 vi.mock('./mutations/experience.mutations');
+vi.mock('./queries/resume.queries');
+vi.mock('./mutations/resume.mutations');
 vi.mock('./queries/auth.queries');
 vi.mock('./mutations/auth.mutations');
 
@@ -35,6 +45,8 @@ const mockedProjectQueries = vi.mocked(projectQueries);
 const mockedProjectMutations = vi.mocked(projectMutations);
 const mockedExperienceQueries = vi.mocked(experienceQueries);
 const mockedExperienceMutations = vi.mocked(experienceMutations);
+const mockedResumeQueries = vi.mocked(resumeQueries);
+const mockedResumeMutations = vi.mocked(resumeMutations);
 const mockedAuthQueries = vi.mocked(authQueries);
 const mockedAuthMutations = vi.mocked(authMutations);
 
@@ -49,6 +61,9 @@ const createExperience = vi.fn();
 const updateExperience = vi.fn();
 const deleteExperience = vi.fn();
 const reorderExperiences = vi.fn();
+const uploadResume = vi.fn();
+const updateResumePublication = vi.fn();
+const deleteResume = vi.fn();
 const loginAdmin = vi.fn();
 const logoutAdmin = vi.fn();
 const refetchPublicProfile = vi.fn();
@@ -59,6 +74,8 @@ const refetchPublicProject = vi.fn();
 const refetchExperiences = vi.fn();
 const refetchExperience = vi.fn();
 const refetchPublicExperiences = vi.fn();
+const refetchResume = vi.fn();
+const refetchPublicResume = vi.fn();
 
 class MockImage {
   width = 1000;
@@ -120,6 +137,11 @@ function resetApiMocks() {
   mockedExperienceMutations.useUpdateExperienceMutation.mockReset();
   mockedExperienceMutations.useDeleteExperienceMutation.mockReset();
   mockedExperienceMutations.useReorderExperiencesMutation.mockReset();
+  mockedResumeQueries.useResume.mockReset();
+  mockedResumeQueries.usePublicResume.mockReset();
+  mockedResumeMutations.useUploadResumeMutation.mockReset();
+  mockedResumeMutations.useUpdateResumePublicationMutation.mockReset();
+  mockedResumeMutations.useDeleteResumeMutation.mockReset();
   mockedAuthQueries.useAdminSession.mockReset();
   mockedAuthMutations.useLoginAdminMutation.mockReset();
   mockedAuthMutations.useLogoutAdminMutation.mockReset();
@@ -134,6 +156,9 @@ function resetApiMocks() {
   updateExperience.mockReset();
   deleteExperience.mockReset();
   reorderExperiences.mockReset();
+  uploadResume.mockReset();
+  updateResumePublication.mockReset();
+  deleteResume.mockReset();
   loginAdmin.mockReset();
   logoutAdmin.mockReset();
   refetchPublicProfile.mockReset();
@@ -144,6 +169,8 @@ function resetApiMocks() {
   refetchExperiences.mockReset();
   refetchExperience.mockReset();
   refetchPublicExperiences.mockReset();
+  refetchResume.mockReset();
+  refetchPublicResume.mockReset();
 }
 
 function file(type = 'image/png') {
@@ -253,6 +280,34 @@ function experience(overrides: Partial<Experience> = {}): Experience {
   };
 }
 
+function resume(overrides: Partial<Resume> = {}): Resume {
+  return {
+    id: 'resume-1',
+    originalFilename: 'Jastine-CV.pdf',
+    fileSize: 120_000,
+    contentType: 'application/pdf',
+    isPublic: false,
+    uploadedAt: '2026-08-25T10:00:00.000Z',
+    createdAt: '2026-08-25T10:00:00.000Z',
+    updatedAt: '2026-08-25T10:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function publicResume(overrides: Partial<PublicResume> = {}): PublicResume {
+  return {
+    id: 'resume-1',
+    originalFilename: 'Jastine-CV.pdf',
+    fileSize: 120_000,
+    contentType: 'application/pdf',
+    isPublic: true,
+    uploadedAt: '2026-08-25T10:00:00.000Z',
+    updatedAt: '2026-08-25T10:00:00.000Z',
+    downloadUrl: 'http://localhost:3001/public/resume/download',
+    ...overrides,
+  };
+}
+
 function mockProjectHooks(projects: Project[] = []) {
   mockedProjectQueries.useProjects.mockReturnValue({
     data: projects,
@@ -339,6 +394,30 @@ function mockExperienceHooks(experiences: Experience[] = []) {
   >);
 }
 
+function mockResumeHooks(currentResume: Resume | null = null) {
+  mockedResumeQueries.useResume.mockReturnValue({
+    data: currentResume,
+    isLoading: false,
+    isError: false,
+    error: null,
+    refetch: refetchResume,
+  } as unknown as ReturnType<typeof resumeQueries.useResume>);
+  mockedResumeMutations.useUploadResumeMutation.mockReturnValue({
+    mutateAsync: uploadResume,
+    isPending: false,
+  } as unknown as ReturnType<typeof resumeMutations.useUploadResumeMutation>);
+  mockedResumeMutations.useUpdateResumePublicationMutation.mockReturnValue({
+    mutateAsync: updateResumePublication,
+    isPending: false,
+  } as unknown as ReturnType<
+    typeof resumeMutations.useUpdateResumePublicationMutation
+  >);
+  mockedResumeMutations.useDeleteResumeMutation.mockReturnValue({
+    mutateAsync: deleteResume,
+    isPending: false,
+  } as unknown as ReturnType<typeof resumeMutations.useDeleteResumeMutation>);
+}
+
 function mockPublicProjectHooks(projects: Project[] = []) {
   mockedProjectQueries.usePublicProjects.mockReturnValue({
     data: projects,
@@ -370,6 +449,16 @@ function mockPublicExperienceHooks(experiences: Experience[] = []) {
   } as unknown as ReturnType<typeof experienceQueries.usePublicExperiences>);
 }
 
+function mockPublicResumeHook(currentResume: PublicResume | null = null) {
+  mockedResumeQueries.usePublicResume.mockReturnValue({
+    data: currentResume,
+    isLoading: false,
+    isError: false,
+    error: null,
+    refetch: refetchPublicResume,
+  } as unknown as ReturnType<typeof resumeQueries.usePublicResume>);
+}
+
 function renderApp(path = '/') {
   window.history.pushState({}, '', path);
 
@@ -381,9 +470,11 @@ beforeEach(() => {
   mockProfileHooks();
   mockProjectHooks();
   mockExperienceHooks();
+  mockResumeHooks();
   mockPublicProfileHook();
   mockPublicProjectHooks();
   mockPublicExperienceHooks();
+  mockPublicResumeHook();
 });
 
 afterEach(() => {
@@ -528,12 +619,18 @@ describe('admin navigation', () => {
     expect(
       screen.getByRole('heading', { name: 'Experience' }),
     ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Resume' }));
+
+    expect(window.location.pathname).toBe('/admin/resume');
+    expect(screen.getByRole('heading', { name: 'Resume' })).toBeInTheDocument();
   });
 
   it.each([
     '/admin/profile',
     '/admin/projects',
     '/admin/experience',
+    '/admin/resume',
     '/admin/projects/new',
     '/admin/projects/project-1/edit',
   ])(
@@ -651,6 +748,9 @@ describe('public homepage', () => {
         'Managed experience detail should not run on public pages',
       );
     });
+    mockedResumeQueries.useResume.mockImplementation(() => {
+      throw new Error('Managed resume query should not run on public pages');
+    });
 
     renderApp('/');
 
@@ -658,11 +758,13 @@ describe('public homepage', () => {
     expect(mockedProfileQueries.usePublicProfile).toHaveBeenCalled();
     expect(mockedProjectQueries.usePublicProjects).toHaveBeenCalled();
     expect(mockedExperienceQueries.usePublicExperiences).toHaveBeenCalled();
+    expect(mockedResumeQueries.usePublicResume).toHaveBeenCalled();
     expect(mockedProfileQueries.useProfile).not.toHaveBeenCalled();
     expect(mockedProjectQueries.useProjects).not.toHaveBeenCalled();
     expect(mockedProjectQueries.useProject).not.toHaveBeenCalled();
     expect(mockedExperienceQueries.useExperiences).not.toHaveBeenCalled();
     expect(mockedExperienceQueries.useExperience).not.toHaveBeenCalled();
+    expect(mockedResumeQueries.useResume).not.toHaveBeenCalled();
     expect(
       screen.getByRole('heading', { name: 'Jastine Formentera' }),
     ).toBeInTheDocument();
@@ -701,6 +803,7 @@ describe('public homepage', () => {
     });
     mockPublicProfileHook();
     mockPublicExperienceHooks([experience()]);
+    mockPublicResumeHook(publicResume());
     mockPublicProjectHooks([
       featuredProject,
       mobileProject,
@@ -731,6 +834,9 @@ describe('public homepage', () => {
         name: 'Open Jastine Formentera LinkedIn profile',
       }),
     ).toHaveAttribute('href', 'https://linkedin.com/in/jastine');
+    expect(
+      screen.getByRole('link', { name: 'Download Jastine Formentera CV' }),
+    ).toHaveAttribute('href', 'http://localhost:3001/public/resume/download');
 
     const skills = screen
       .getByRole('heading', { name: 'Skills' })
@@ -799,6 +905,13 @@ describe('public homepage', () => {
       error: null,
       refetch: refetchPublicExperiences,
     } as unknown as ReturnType<typeof experienceQueries.usePublicExperiences>);
+    mockedResumeQueries.usePublicResume.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      isError: false,
+      error: null,
+      refetch: refetchPublicResume,
+    } as unknown as ReturnType<typeof resumeQueries.usePublicResume>);
     mockedProjectQueries.usePublicProject.mockReturnValue({
       data: null,
       isLoading: false,
@@ -812,6 +925,9 @@ describe('public homepage', () => {
     expect(screen.getByText('Loading profile')).toBeInTheDocument();
     expect(screen.getByText('Loading projects')).toBeInTheDocument();
     expect(screen.getByText('Loading experience')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('link', { name: /Download .* CV/ }),
+    ).not.toBeInTheDocument();
 
     mockedProfileQueries.usePublicProfile.mockReturnValue({
       data: null,
@@ -834,6 +950,13 @@ describe('public homepage', () => {
       error: null,
       refetch: refetchPublicExperiences,
     } as unknown as ReturnType<typeof experienceQueries.usePublicExperiences>);
+    mockedResumeQueries.usePublicResume.mockReturnValue({
+      data: null,
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: refetchPublicResume,
+    } as unknown as ReturnType<typeof resumeQueries.usePublicResume>);
     rerender(<App />);
 
     expect(
@@ -850,6 +973,9 @@ describe('public homepage', () => {
     expect(
       screen.getByText('No public experience entries are available.'),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('link', { name: /Download .* CV/ }),
+    ).not.toBeInTheDocument();
 
     mockedProfileQueries.usePublicProfile.mockReturnValue({
       data: undefined,
@@ -872,11 +998,22 @@ describe('public homepage', () => {
       error: new Error('experience failed'),
       refetch: refetchPublicExperiences,
     } as unknown as ReturnType<typeof experienceQueries.usePublicExperiences>);
+    mockedResumeQueries.usePublicResume.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error('resume failed'),
+      refetch: refetchPublicResume,
+    } as unknown as ReturnType<typeof resumeQueries.usePublicResume>);
     rerender(<App />);
 
     expect(screen.getByText('profile failed')).toBeInTheDocument();
     expect(screen.getByText('projects failed')).toBeInTheDocument();
     expect(screen.getByText('experience failed')).toBeInTheDocument();
+    expect(screen.queryByText('resume failed')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('link', { name: /Download .* CV/ }),
+    ).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Retry profile' }));
     fireEvent.click(screen.getByRole('button', { name: 'Retry projects' }));
     fireEvent.click(screen.getByRole('button', { name: 'Retry experience' }));
@@ -1566,6 +1703,177 @@ describe('experience admin', () => {
     expect(
       within(dialog).getByRole('button', { name: 'Deleting' }),
     ).toBeDisabled();
+  });
+});
+
+describe('resume admin', () => {
+  it('shows loading, empty, and error states with retry', () => {
+    mockedResumeQueries.useResume.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      isError: false,
+      error: null,
+      refetch: refetchResume,
+    } as unknown as ReturnType<typeof resumeQueries.useResume>);
+
+    const { rerender } = renderApp('/admin/resume');
+
+    expect(screen.getByRole('status')).toHaveTextContent('Loading resume');
+
+    mockedResumeQueries.useResume.mockReturnValue({
+      data: null,
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: refetchResume,
+    } as unknown as ReturnType<typeof resumeQueries.useResume>);
+    rerender(<App />);
+
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'No resume is available.',
+    );
+
+    mockedResumeQueries.useResume.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error('resume load failed'),
+      refetch: refetchResume,
+    } as unknown as ReturnType<typeof resumeQueries.useResume>);
+    rerender(<App />);
+
+    expect(screen.getByRole('alert')).toHaveTextContent('resume load failed');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(refetchResume).toHaveBeenCalled();
+  });
+
+  it('validates and uploads a new resume PDF', async () => {
+    uploadResume.mockImplementation(async (input) => {
+      input.onProgress(67);
+      return resume({ isPublic: false });
+    });
+
+    const view = renderApp('/admin/resume');
+
+    fireEvent.change(screen.getByLabelText('PDF file'), {
+      target: {
+        files: [new File(['not pdf'], 'resume.txt', { type: 'text/plain' })],
+      },
+    });
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Choose a PDF file.');
+
+    const pdf = new File(['%PDF-1.4\n%%EOF'], 'Jastine-CV.pdf', {
+      type: 'application/pdf',
+    });
+    fireEvent.change(screen.getByLabelText('PDF file'), {
+      target: { files: [pdf] },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Upload PDF' }));
+
+    await waitFor(() =>
+      expect(uploadResume).toHaveBeenCalledWith({
+        file: pdf,
+        fileName: 'Jastine-CV.pdf',
+        onProgress: expect.any(Function),
+      }),
+    );
+    expect(await screen.findByText('Resume uploaded')).toBeInTheDocument();
+  });
+
+  it('confirms replacement, publishes, unpublishes, and removes a resume', async () => {
+    const currentResume = resume({ isPublic: false });
+    mockResumeHooks(currentResume);
+    uploadResume.mockResolvedValue(resume({ isPublic: false }));
+    updateResumePublication.mockResolvedValue(resume({ isPublic: true }));
+    deleteResume.mockResolvedValue(currentResume);
+
+    const view = renderApp('/admin/resume');
+
+    expect(screen.getByText('Jastine-CV.pdf')).toBeInTheDocument();
+    expect(screen.getAllByText('Private').length).toBeGreaterThan(0);
+
+    const pdf = new File(['%PDF-1.4\n%%EOF'], 'New-CV.pdf', {
+      type: 'application/pdf',
+    });
+    fireEvent.change(screen.getByLabelText('PDF file'), {
+      target: { files: [pdf] },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Replace PDF' }));
+
+    expect(screen.getByRole('dialog')).toHaveTextContent(
+      'Replace Jastine-CV.pdf?',
+    );
+    fireEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', {
+        name: 'Replace',
+      }),
+    );
+    await waitFor(() => expect(uploadResume).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Publish' }));
+    await waitFor(() =>
+      expect(updateResumePublication).toHaveBeenCalledWith({ isPublic: true }),
+    );
+
+    mockResumeHooks(resume({ isPublic: true }));
+    view.rerender(<App />);
+    fireEvent.click(screen.getByRole('button', { name: 'Unpublish' }));
+    await waitFor(() =>
+      expect(updateResumePublication).toHaveBeenCalledWith({ isPublic: false }),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    expect(screen.getByRole('dialog')).toHaveTextContent(
+      'Remove Jastine-CV.pdf?',
+    );
+    fireEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', {
+        name: 'Remove',
+      }),
+    );
+    await waitFor(() => expect(deleteResume).toHaveBeenCalled());
+  });
+
+  it('preserves visible resume and displays API errors when removal fails', async () => {
+    mockResumeHooks(resume());
+    deleteResume.mockRejectedValue(new Error('delete failed'));
+
+    renderApp('/admin/resume');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    fireEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', {
+        name: 'Remove',
+      }),
+    );
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('delete failed');
+    expect(screen.getByText('Jastine-CV.pdf')).toBeInTheDocument();
+  });
+
+  it('disables duplicate submissions while resume mutations are pending', () => {
+    mockResumeHooks(resume());
+    mockedResumeMutations.useUploadResumeMutation.mockReturnValue({
+      mutateAsync: uploadResume,
+      isPending: true,
+    } as unknown as ReturnType<typeof resumeMutations.useUploadResumeMutation>);
+    mockedResumeMutations.useUpdateResumePublicationMutation.mockReturnValue({
+      mutateAsync: updateResumePublication,
+      isPending: true,
+    } as unknown as ReturnType<
+      typeof resumeMutations.useUpdateResumePublicationMutation
+    >);
+    mockedResumeMutations.useDeleteResumeMutation.mockReturnValue({
+      mutateAsync: deleteResume,
+      isPending: true,
+    } as unknown as ReturnType<typeof resumeMutations.useDeleteResumeMutation>);
+
+    renderApp('/admin/resume');
+
+    expect(screen.getByLabelText('PDF file')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Uploading' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Remove' })).toBeDisabled();
   });
 });
 

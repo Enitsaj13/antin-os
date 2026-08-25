@@ -2,6 +2,7 @@ import { useEffect, useMemo } from 'react';
 import {
   ArrowRight,
   BriefcaseBusiness,
+  Download,
   ExternalLink,
   Github,
   Linkedin,
@@ -13,6 +14,7 @@ import type { Experience, Project } from '@antin-os/shared';
 import { usePublicProfile } from './queries/profile.queries';
 import { usePublicExperiences } from './queries/experience.queries';
 import { usePublicProjects } from './queries/project.queries';
+import { usePublicResume } from './queries/resume.queries';
 import { setDocumentMetadata } from './metadata';
 
 type Navigate = (path: string) => void;
@@ -112,7 +114,9 @@ export function PublicHomePage({ onNavigate }: { onNavigate: Navigate }) {
   const profileQuery = usePublicProfile();
   const projectsQuery = usePublicProjects();
   const experienceQuery = usePublicExperiences();
+  const resumeQuery = usePublicResume();
   const profile = profileQuery.data;
+  const resume = resumeQuery.data;
   const projects = projectsQuery.data ?? [];
   const experiences = (experienceQuery.data ?? []).filter(
     (experience) => experience.isPublic,
@@ -230,6 +234,16 @@ export function PublicHomePage({ onNavigate }: { onNavigate: Navigate }) {
                     <Linkedin size={18} aria-hidden="true" />
                     LinkedIn
                     <ExternalLink size={16} aria-hidden="true" />
+                  </a>
+                ) : null}
+                {!resumeQuery.isLoading && !resumeQuery.isError && resume ? (
+                  <a
+                    className={PRIMARY_LINK_CLASS}
+                    href={resume.downloadUrl}
+                    aria-label={`Download ${profile.fullName} CV`}
+                  >
+                    <Download size={18} aria-hidden="true" />
+                    Download CV
                   </a>
                 ) : null}
               </div>

@@ -49,18 +49,18 @@ make e2e-ui             # Playwright UI runner
 
 ## Documentation
 
-| Read this                                                         | When you want to...                                         |
-| ----------------------------------------------------------------- | ----------------------------------------------------------- |
-| [Repository Guide](docs/development/repository-guide.md)          | Set up, run, test, and troubleshoot this repo day-to-day    |
-| [Command Reference](docs/development/command-reference.md)        | Pick the smallest useful Makefile or pnpm command           |
-| [AWS S3 Project Images](docs/operations/aws-s3-project-images.md) | Configure S3 uploads for project screenshots                |
-| [Projects Module Spec](docs/specs/projects-module.md)             | Understand the portfolio projects module behavior           |
-| [OpenSpec](openspec/)                                             | Review specs, active changes, and archived change proposals |
+| Read this                                                            | When you want to...                                         |
+| -------------------------------------------------------------------- | ----------------------------------------------------------- |
+| [Repository Guide](docs/development/repository-guide.md)             | Set up, run, test, and troubleshoot this repo day-to-day    |
+| [Command Reference](docs/development/command-reference.md)           | Pick the smallest useful Makefile or pnpm command           |
+| [AWS S3 Portfolio Storage](docs/operations/aws-s3-project-images.md) | Configure S3 uploads for images and resume PDFs             |
+| [Projects Module Spec](docs/specs/projects-module.md)                | Understand the portfolio projects module behavior           |
+| [OpenSpec](openspec/)                                                | Review specs, active changes, and archived change proposals |
 
 ## Stack at a Glance
 
 NestJS 11 + Prisma 7 + PostgreSQL 16 · Vite + React 19 + Tailwind · pnpm monorepo ·
-shared TypeScript contracts · AWS S3 image storage · Jest + Vitest +
+shared TypeScript contracts · AWS S3 portfolio storage · Jest + Vitest +
 Playwright · Docker Compose · OpenSpec.
 
 ## Layout
@@ -82,6 +82,7 @@ Playwright · Docker Compose · OpenSpec.
 
 ## Status
 
-Pre-1.0. The repo currently includes portfolio project APIs, profile management APIs,
-a profile admin interface with crop/upload flows, local Postgres tooling, fast commit
-tests, opt-in E2E checks, and OpenSpec planning artifacts.
+Pre-1.0. The repo currently includes portfolio project APIs, experience APIs,
+profile management APIs, S3-backed image/resume storage, public portfolio pages,
+admin management surfaces, local Postgres tooling, fast commit tests, opt-in E2E
+checks, and OpenSpec planning artifacts.

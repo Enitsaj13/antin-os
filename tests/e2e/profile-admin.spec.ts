@@ -90,6 +90,23 @@ test('loads the public homepage without an admin session', async ({ page }) => {
     });
   });
 
+  await page.route('http://localhost:3001/public/resume', async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: corsHeaders,
+      json: {
+        id: 'resume-1',
+        originalFilename: 'Jastine-CV.pdf',
+        fileSize: 120000,
+        contentType: 'application/pdf',
+        isPublic: true,
+        uploadedAt: '2026-08-25T10:00:00.000Z',
+        updatedAt: '2026-08-25T10:00:00.000Z',
+        downloadUrl: '/public/resume/download',
+      },
+    });
+  });
+
   await page.goto('/');
 
   await expect(page).toHaveURL(/\/$/);
@@ -106,9 +123,140 @@ test('loads the public homepage without an admin session', async ({ page }) => {
   await expect(page.getByText('Lead Mobile Developer')).toBeVisible();
   await expect(page.getByText('Built guided playback')).toBeVisible();
   await expect(
+    page.getByRole('link', { name: 'Download Jastine Formentera CV' }),
+  ).toHaveAttribute('href', 'http://localhost:3001/public/resume/download');
+  await expect(
     page.getByRole('heading', { level: 1, name: 'Portfolio management' }),
   ).toHaveCount(0);
   expect(authSessionRequests).toBe(0);
+});
+
+test('lets an authenticated owner manage and publish a resume', async ({
+  page,
+}) => {
+  let resume = {
+    id: 'resume-1',
+    originalFilename: 'Jastine-CV.pdf',
+    fileSize: 120000,
+    contentType: 'application/pdf',
+    isPublic: false,
+    uploadedAt: '2026-08-25T10:00:00.000Z',
+    createdAt: '2026-08-25T10:00:00.000Z',
+    updatedAt: '2026-08-25T10:00:00.000Z',
+  };
+  let uploadCount = 0;
+  let publicationPayload: unknown = null;
+  let deleteCalled = false;
+
+  await page.route('http://localhost:3001/auth/session', async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: corsHeaders,
+      json: { authenticated: true, user: { username: 'owner' } },
+    });
+  });
+
+  await page.route('http://localhost:3001/resume**', async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+
+    if (request.method() === 'OPTIONS') {
+      await route.fulfill({ status: 204, headers: corsHeaders });
+      return;
+    }
+
+    if (url.pathname === '/resume' && request.method() === 'GET') {
+      await route.fulfill({
+        status: 200,
+        headers: corsHeaders,
+        json: resume,
+      });
+      return;
+    }
+
+    if (url.pathname === '/resume' && request.method() === 'POST') {
+      uploadCount += 1;
+      resume = {
+        ...resume,
+        originalFilename: 'Replacement-CV.pdf',
+        isPublic: false,
+        updatedAt: '2026-08-25T11:00:00.000Z',
+      };
+      await route.fulfill({
+        status: 201,
+        headers: corsHeaders,
+        json: resume,
+      });
+      return;
+    }
+
+    if (
+      url.pathname === '/resume/publication' &&
+      request.method() === 'PATCH'
+    ) {
+      publicationPayload = request.postDataJSON();
+      resume = {
+        ...resume,
+        isPublic: Boolean(
+          (publicationPayload as { isPublic: boolean }).isPublic,
+        ),
+      };
+      await route.fulfill({
+        status: 200,
+        headers: corsHeaders,
+        json: resume,
+      });
+      return;
+    }
+
+    if (url.pathname === '/resume' && request.method() === 'DELETE') {
+      deleteCalled = true;
+      await route.fulfill({
+        status: 200,
+        headers: corsHeaders,
+        json: resume,
+      });
+      return;
+    }
+
+    await route.fulfill({ status: 404, headers: corsHeaders, body: '' });
+  });
+
+  await page.goto('/admin/resume');
+
+  await expect(
+    page.getByRole('heading', { level: 1, name: 'Portfolio management' }),
+  ).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Resume' })).toBeVisible();
+  await expect(page.getByText('Jastine-CV.pdf')).toBeVisible();
+
+  await page.getByLabel('PDF file').setInputFiles({
+    name: 'Replacement-CV.pdf',
+    mimeType: 'application/pdf',
+    buffer: Buffer.from('%PDF-1.4\n%%EOF'),
+  });
+  await page.getByRole('button', { name: 'Replace PDF' }).click();
+  await expect(page.getByRole('dialog')).toContainText(
+    'Replace Jastine-CV.pdf?',
+  );
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Replace', exact: true })
+    .click();
+  await expect.poll(() => uploadCount).toBe(1);
+
+  await page.getByRole('button', { name: 'Publish' }).click();
+  await expect.poll(() => publicationPayload).toEqual({ isPublic: true });
+
+  await page.getByRole('button', { name: 'Remove' }).click();
+  await expect(page.getByRole('dialog')).toContainText(
+    'Remove Replacement-CV.pdf?',
+  );
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: 'Remove' })
+    .click();
+  await expect.poll(() => deleteCalled).toBe(true);
 });
 
 test('lets an authenticated owner manage and reorder experience entries', async ({

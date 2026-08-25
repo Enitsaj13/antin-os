@@ -62,7 +62,8 @@ Generate a session secret:
 openssl rand -base64 32
 ```
 
-Profile picture upload and project image upload also need S3 configuration:
+Profile picture upload, project image upload, and resume upload also need S3
+configuration:
 
 ```bash
 AWS_REGION=
@@ -71,9 +72,12 @@ AWS_ACCESS_KEY_ID=
 AWS_SECRET_ACCESS_KEY=
 AWS_S3_PUBLIC_BASE_URL=
 AWS_S3_PRESIGNED_URL_TTL_SECONDS=900
+RESUME_MAX_UPLOAD_BYTES=5242880
 ```
 
-Project images use browser-to-S3 presigned uploads. Full AWS setup:
+Project images use browser-to-S3 presigned uploads. Resume PDFs are uploaded to
+the API, validated server-side, stored privately in S3, and downloaded through
+`/public/resume/download` only when published. Full AWS setup:
 [AWS S3 Project Images](../operations/aws-s3-project-images.md).
 
 ## Run Locally

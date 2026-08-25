@@ -1,8 +1,11 @@
-# AWS S3 Project Images
+# AWS S3 Portfolio Storage
 
 This app uploads project images directly from the browser to S3 using presigned
 `PUT` URLs created by the Nest API. The database stores the S3 object key in
 `Project.imageKey`; API responses resolve that key into `imageUrl` for display.
+Profile pictures and resume PDFs also use the same private bucket. Resume PDFs
+are uploaded to the API for validation and are downloaded through the app, not
+through public S3 URLs.
 
 Official references:
 
@@ -73,12 +76,13 @@ Replace `your-unique-portfolio-bucket-name` before creating the policy:
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "AllowPortfolioImageObjects",
+      "Sid": "AllowPortfolioObjects",
       "Effect": "Allow",
       "Action": ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"],
       "Resource": [
         "arn:aws:s3:::your-unique-portfolio-bucket-name/project-images/*",
-        "arn:aws:s3:::your-unique-portfolio-bucket-name/profile-pictures/*"
+        "arn:aws:s3:::your-unique-portfolio-bucket-name/profile-pictures/*",
+        "arn:aws:s3:::your-unique-portfolio-bucket-name/resumes/*"
       ]
     }
   ]
@@ -99,6 +103,7 @@ AWS_ACCESS_KEY_ID=your_access_key_id
 AWS_SECRET_ACCESS_KEY=your_secret_access_key
 AWS_S3_PUBLIC_BASE_URL=
 AWS_S3_PRESIGNED_URL_TTL_SECONDS=900
+RESUME_MAX_UPLOAD_BYTES=5242880
 ```
 
 Restart the API after changing env vars.
@@ -120,15 +125,26 @@ http://localhost:5173/admin/projects/new
 Upload an image in the Project image field. The browser uploads the file to S3,
 then saving the project stores the returned `imageKey`.
 
+Resume PDFs are managed at:
+
+```text
+http://localhost:5173/admin/resume
+```
+
+The API validates PDF uploads and stores them under `resumes/*`. Public visitors
+only get a Download CV button when the resume is published, and the download
+goes through `/public/resume/download` so the private S3 object key is never
+shown.
+
 ## Optional Public URLs
 
-For production, prefer CloudFront in front of S3 and set:
+For production project images, prefer CloudFront in front of S3 and set:
 
 ```bash
 AWS_S3_PUBLIC_BASE_URL=https://your-cloudfront-domain.example
 ```
 
-For a simpler learning-only setup, you can instead make only
+For a simpler learning-only project-image setup, you can instead make only
 `project-images/*` publicly readable and set:
 
 ```bash
@@ -154,6 +170,8 @@ Use a narrow bucket policy if you choose this:
 
 This public policy requires changing the bucket public access settings. Skip it
 until you are comfortable reading the S3 permissions screen and AWS billing page.
+Do not make `resumes/*` public; CV downloads should continue to use the app
+endpoint.
 
 ## Cost Guardrails
 
@@ -164,5 +182,5 @@ aws budgets describe-budgets --account-id YOUR_AWS_ACCOUNT_ID
 ```
 
 Also create an AWS Budget in the console with an alert around 1 USD. The app
-limits project images to 5 MB, but billing alerts are still worth setting up
-before experimenting.
+limits project images and resumes to 5 MB by default, but billing alerts are
+still worth setting up before experimenting.

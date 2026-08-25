@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   BriefcaseBusiness,
+  FileText,
   FolderKanban,
   LogOut,
   UserRound,
@@ -11,6 +12,7 @@ import { ExperienceAdmin } from './ExperienceAdmin';
 import { LoginAdmin } from './LoginAdmin';
 import { ProfileAdmin } from './ProfileAdmin';
 import { ProjectFormPage, ProjectsAdmin } from './ProjectAdmin';
+import { ResumeAdmin } from './ResumeAdmin';
 import { PublicHomePage } from './PublicHome';
 import { PublicProjectDetailPage, PublicProjectsPage } from './PublicProjects';
 import './styles.css';
@@ -23,6 +25,7 @@ type Route =
   | { name: 'profile' }
   | { name: 'projects' }
   | { name: 'experience' }
+  | { name: 'resume' }
   | { name: 'new-project' }
   | { name: 'edit-project'; id: string };
 
@@ -67,6 +70,10 @@ function parseRoute(pathname: string): Route {
 
   if (pathname === '/admin/experience') {
     return { name: 'experience' };
+  }
+
+  if (pathname === '/admin/resume') {
+    return { name: 'resume' };
   }
 
   if (pathname === '/admin/projects/new') {
@@ -130,7 +137,9 @@ export function App() {
       ? 'profile'
       : route.name === 'experience'
         ? 'experience'
-        : 'projects';
+        : route.name === 'resume'
+          ? 'resume'
+          : 'projects';
 
   function onNavigate(path: string) {
     navigateTo(path);
@@ -231,6 +240,19 @@ export function App() {
             Experience
           </button>
           <button
+            className={`inline-flex min-h-10 items-center gap-2 border px-3 py-2 ${
+              activeSection === 'resume'
+                ? 'border-teal-700 bg-teal-700 text-white'
+                : 'border-slate-400 bg-white text-slate-800 hover:border-teal-700'
+            }`}
+            type="button"
+            aria-current={activeSection === 'resume' ? 'page' : undefined}
+            onClick={() => onNavigate('/admin/resume')}
+          >
+            <FileText size={18} aria-hidden="true" />
+            Resume
+          </button>
+          <button
             className="inline-flex min-h-10 items-center gap-2 border border-slate-400 bg-white px-3 py-2 text-slate-800 hover:border-teal-700 disabled:cursor-not-allowed disabled:opacity-60"
             type="button"
             disabled={logoutMutation.isPending}
@@ -247,6 +269,7 @@ export function App() {
         <ProjectsAdmin onNavigate={onNavigate} />
       ) : null}
       {route.name === 'experience' ? <ExperienceAdmin /> : null}
+      {route.name === 'resume' ? <ResumeAdmin /> : null}
       {route.name === 'new-project' ? (
         <ProjectFormPage mode="create" onNavigate={onNavigate} />
       ) : null}
