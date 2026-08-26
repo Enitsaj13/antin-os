@@ -1,0 +1,1 @@
+export const PORTFOLIO_SETTINGS_SINGLETON_KEY = 'owner';

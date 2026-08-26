@@ -43,21 +43,21 @@ model Profile {
 }
 
 model Experience {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   company        String
   role           String
   location       String
   employmentType String
   startDate      DateTime
   endDate        DateTime?
-  isCurrent      Boolean  @default(false)
+  isCurrent      Boolean   @default(false)
   summary        String
   achievements   String[]
   technologies   String[]
   displayOrder   Int
-  isPublic       Boolean  @default(false)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  isPublic       Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   @@index([isPublic, displayOrder, startDate])
 }
@@ -73,4 +73,47 @@ model Resume {
   uploadedAt       DateTime @default(now())
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
+}
+
+model PortfolioSettings {
+  id                 String   @id @default(cuid())
+  singletonKey       String   @unique @default("owner")
+  showEducation      Boolean  @default(false)
+  showCertifications Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model Education {
+  id           String    @id @default(cuid())
+  institution  String
+  credential   String
+  fieldOfStudy String
+  location     String
+  startDate    DateTime?
+  endDate      DateTime?
+  summary      String
+  displayOrder Int
+  isPublic     Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([isPublic, displayOrder, startDate])
+}
+
+model Certification {
+  id             String    @id @default(cuid())
+  name           String
+  issuer         String
+  issueDate      DateTime?
+  expirationDate DateTime?
+  credentialId   String?
+  credentialUrl  String?
+  summary        String
+  displayOrder   Int
+  isPublic       Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([isPublic, displayOrder, issueDate])
 }

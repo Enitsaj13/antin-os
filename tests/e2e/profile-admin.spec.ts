@@ -107,6 +107,25 @@ test('loads the public homepage without an admin session', async ({ page }) => {
     });
   });
 
+  await page.route('http://localhost:3001/public/education', async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: corsHeaders,
+      json: [],
+    });
+  });
+
+  await page.route(
+    'http://localhost:3001/public/certifications',
+    async (route) => {
+      await route.fulfill({
+        status: 200,
+        headers: corsHeaders,
+        json: [],
+      });
+    },
+  );
+
   await page.goto('/');
 
   await expect(page).toHaveURL(/\/$/);
@@ -129,6 +148,275 @@ test('loads the public homepage without an admin session', async ({ page }) => {
     page.getByRole('heading', { level: 1, name: 'Portfolio management' }),
   ).toHaveCount(0);
   expect(authSessionRequests).toBe(0);
+});
+
+test('lets an authenticated owner control credential visibility on the public homepage', async ({
+  page,
+}) => {
+  let settings = {
+    id: 'settings-1',
+    singletonKey: 'owner',
+    showEducation: false,
+    showCertifications: false,
+    createdAt: '2026-08-25T10:00:00.000Z',
+    updatedAt: '2026-08-25T10:00:00.000Z',
+  };
+  const education = {
+    id: 'education-1',
+    institution: 'University of Cebu',
+    credential: 'BS Information Technology',
+    fieldOfStudy: 'Software Development',
+    location: 'Cebu, Philippines',
+    startDate: '2018-06-01T00:00:00.000Z',
+    endDate: '2022-04-01T00:00:00.000Z',
+    summary: 'Studied software engineering foundations.',
+    displayOrder: 0,
+    isPublic: false,
+    createdAt: '2026-08-13T10:00:00.000Z',
+    updatedAt: '2026-08-14T10:00:00.000Z',
+  };
+  const certification = {
+    id: 'certification-1',
+    name: 'AWS Cloud Practitioner',
+    issuer: 'Amazon Web Services',
+    issueDate: '2026-01-01T00:00:00.000Z',
+    expirationDate: '2029-01-01T00:00:00.000Z',
+    credentialId: 'AWS-123',
+    credentialUrl: 'https://example.com/aws',
+    summary: 'Cloud fundamentals certification.',
+    displayOrder: 0,
+    isPublic: false,
+    createdAt: '2026-08-13T10:00:00.000Z',
+    updatedAt: '2026-08-14T10:00:00.000Z',
+  };
+
+  await page.route('http://localhost:3001/auth/session', async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: corsHeaders,
+      json: { authenticated: true, user: { username: 'owner' } },
+    });
+  });
+
+  await page.route(
+    'http://localhost:3001/portfolio-settings',
+    async (route) => {
+      const request = route.request();
+
+      if (request.method() === 'OPTIONS') {
+        await route.fulfill({ status: 204, headers: corsHeaders });
+        return;
+      }
+
+      if (request.method() === 'PATCH') {
+        settings = {
+          ...settings,
+          ...(request.postDataJSON() as Partial<typeof settings>),
+        };
+      }
+
+      await route.fulfill({
+        status: 200,
+        headers: corsHeaders,
+        json: settings,
+      });
+    },
+  );
+
+  await page.route('http://localhost:3001/education**', async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+
+    if (request.method() === 'OPTIONS') {
+      await route.fulfill({ status: 204, headers: corsHeaders });
+      return;
+    }
+
+    if (url.pathname === '/education' && request.method() === 'GET') {
+      await route.fulfill({
+        status: 200,
+        headers: corsHeaders,
+        json: [education],
+      });
+      return;
+    }
+
+    if (
+      url.pathname === '/education/education-1' &&
+      request.method() === 'PATCH'
+    ) {
+      Object.assign(education, request.postDataJSON());
+      await route.fulfill({
+        status: 200,
+        headers: corsHeaders,
+        json: education,
+      });
+      return;
+    }
+
+    await route.fulfill({ status: 404, headers: corsHeaders, body: '' });
+  });
+
+  await page.route('http://localhost:3001/certifications**', async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+
+    if (request.method() === 'OPTIONS') {
+      await route.fulfill({ status: 204, headers: corsHeaders });
+      return;
+    }
+
+    if (url.pathname === '/certifications' && request.method() === 'GET') {
+      await route.fulfill({
+        status: 200,
+        headers: corsHeaders,
+        json: [certification],
+      });
+      return;
+    }
+
+    if (
+      url.pathname === '/certifications/certification-1' &&
+      request.method() === 'PATCH'
+    ) {
+      Object.assign(certification, request.postDataJSON());
+      await route.fulfill({
+        status: 200,
+        headers: corsHeaders,
+        json: certification,
+      });
+      return;
+    }
+
+    await route.fulfill({ status: 404, headers: corsHeaders, body: '' });
+  });
+
+  await page.route('http://localhost:3001/public/profile', async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: corsHeaders,
+      json: {
+        id: 'profile-1',
+        fullName: 'Jastine Formentera',
+        headline: 'Full-stack developer',
+        biography: 'I build useful web and mobile products.',
+        location: 'Manila, Philippines',
+        email: 'jastine@example.com',
+        githubUrl: null,
+        linkedinUrl: null,
+        profilePictureUrl: null,
+        createdAt: '2026-08-13T10:00:00.000Z',
+        updatedAt: '2026-08-14T10:00:00.000Z',
+      },
+    });
+  });
+
+  await page.route('http://localhost:3001/public/projects', async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: corsHeaders,
+      json: [],
+    });
+  });
+
+  await page.route('http://localhost:3001/public/experience', async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: corsHeaders,
+      json: [],
+    });
+  });
+
+  await page.route('http://localhost:3001/public/resume', async (route) => {
+    await route.fulfill({
+      status: 404,
+      headers: corsHeaders,
+      body: '',
+    });
+  });
+
+  await page.route('http://localhost:3001/public/education', async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: corsHeaders,
+      json: settings.showEducation && education.isPublic ? [education] : [],
+    });
+  });
+
+  await page.route(
+    'http://localhost:3001/public/certifications',
+    async (route) => {
+      await route.fulfill({
+        status: 200,
+        headers: corsHeaders,
+        json:
+          settings.showCertifications && certification.isPublic
+            ? [certification]
+            : [],
+      });
+    },
+  );
+
+  await page.goto('/admin/credentials');
+
+  await expect(
+    page.getByRole('heading', { level: 1, name: 'Portfolio management' }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Public section visibility' }),
+  ).toBeVisible();
+  await expect(
+    page.getByLabel('Show Education on public portfolio'),
+  ).not.toBeChecked();
+  await expect(
+    page.getByLabel('Show Certifications on public portfolio'),
+  ).not.toBeChecked();
+  await expect(
+    page.getByText('BS Information Technology').first(),
+  ).toBeVisible();
+  await expect(page.getByText('AWS Cloud Practitioner').first()).toBeVisible();
+
+  await page.getByLabel('Show Education on public portfolio').click();
+  await expect.poll(() => settings.showEducation).toBe(true);
+  await page.getByLabel('Show Certifications on public portfolio').click();
+  await expect.poll(() => settings.showCertifications).toBe(true);
+  await expect(page.getByText('Visibility settings saved.')).toBeVisible();
+
+  await page
+    .getByRole('button', {
+      name: 'Publish BS Information Technology at University of Cebu',
+    })
+    .first()
+    .click();
+  await page
+    .getByRole('button', {
+      name: 'Publish AWS Cloud Practitioner from Amazon Web Services',
+    })
+    .first()
+    .click();
+
+  await page.goto('/');
+
+  await expect(
+    page.getByRole('heading', { name: 'Education', exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText('BS Information Technology').first(),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Certifications', exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText('AWS Cloud Practitioner').first()).toBeVisible();
+
+  settings = { ...settings, showEducation: false };
+  await page.reload();
+
+  await expect(
+    page.getByRole('heading', { name: 'Education', exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole('heading', { name: 'Certifications', exact: true }),
+  ).toBeVisible();
 });
 
 test('lets an authenticated owner manage and publish a resume', async ({

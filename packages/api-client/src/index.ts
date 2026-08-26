@@ -1,4 +1,5 @@
 export * from './auth.client';
+export * from './credentials.client';
 export * from './experience.client';
 export * from './http-client';
 export * from './projects.client';

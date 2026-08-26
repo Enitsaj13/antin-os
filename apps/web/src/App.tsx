@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   BriefcaseBusiness,
+  GraduationCap,
   FileText,
   FolderKanban,
   LogOut,
@@ -8,6 +9,7 @@ import {
 } from 'lucide-react';
 import { useLogoutAdminMutation } from './mutations/auth.mutations';
 import { useAdminSession } from './queries/auth.queries';
+import { CredentialsAdmin } from './CredentialsAdmin';
 import { ExperienceAdmin } from './ExperienceAdmin';
 import { LoginAdmin } from './LoginAdmin';
 import { ProfileAdmin } from './ProfileAdmin';
@@ -24,6 +26,7 @@ type Route =
   | { name: 'login'; returnTo: string }
   | { name: 'profile' }
   | { name: 'projects' }
+  | { name: 'credentials' }
   | { name: 'experience' }
   | { name: 'resume' }
   | { name: 'new-project' }
@@ -70,6 +73,10 @@ function parseRoute(pathname: string): Route {
 
   if (pathname === '/admin/experience') {
     return { name: 'experience' };
+  }
+
+  if (pathname === '/admin/credentials') {
+    return { name: 'credentials' };
   }
 
   if (pathname === '/admin/resume') {
@@ -137,9 +144,11 @@ export function App() {
       ? 'profile'
       : route.name === 'experience'
         ? 'experience'
-        : route.name === 'resume'
-          ? 'resume'
-          : 'projects';
+        : route.name === 'credentials'
+          ? 'credentials'
+          : route.name === 'resume'
+            ? 'resume'
+            : 'projects';
 
   function onNavigate(path: string) {
     navigateTo(path);
@@ -241,6 +250,19 @@ export function App() {
           </button>
           <button
             className={`inline-flex min-h-10 items-center gap-2 border px-3 py-2 ${
+              activeSection === 'credentials'
+                ? 'border-teal-700 bg-teal-700 text-white'
+                : 'border-slate-400 bg-white text-slate-800 hover:border-teal-700'
+            }`}
+            type="button"
+            aria-current={activeSection === 'credentials' ? 'page' : undefined}
+            onClick={() => onNavigate('/admin/credentials')}
+          >
+            <GraduationCap size={18} aria-hidden="true" />
+            Credentials
+          </button>
+          <button
+            className={`inline-flex min-h-10 items-center gap-2 border px-3 py-2 ${
               activeSection === 'resume'
                 ? 'border-teal-700 bg-teal-700 text-white'
                 : 'border-slate-400 bg-white text-slate-800 hover:border-teal-700'
@@ -269,6 +291,7 @@ export function App() {
         <ProjectsAdmin onNavigate={onNavigate} />
       ) : null}
       {route.name === 'experience' ? <ExperienceAdmin /> : null}
+      {route.name === 'credentials' ? <CredentialsAdmin /> : null}
       {route.name === 'resume' ? <ResumeAdmin /> : null}
       {route.name === 'new-project' ? (
         <ProjectFormPage mode="create" onNavigate={onNavigate} />

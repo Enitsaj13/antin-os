@@ -1,7 +1,9 @@
 import { useEffect, useMemo } from 'react';
 import {
   ArrowRight,
+  Award,
   BriefcaseBusiness,
+  BookOpen,
   Download,
   ExternalLink,
   Github,
@@ -10,7 +12,16 @@ import {
   MapPin,
   RotateCcw,
 } from 'lucide-react';
-import type { Experience, Project } from '@antin-os/shared';
+import type {
+  Certification,
+  Education,
+  Experience,
+  Project,
+} from '@antin-os/shared';
+import {
+  usePublicCertifications,
+  usePublicEducations,
+} from './queries/credentials.queries';
 import { usePublicProfile } from './queries/profile.queries';
 import { usePublicExperiences } from './queries/experience.queries';
 import { usePublicProjects } from './queries/project.queries';
@@ -81,6 +92,16 @@ function formatExperienceRange(experience: Experience) {
   return `${formatTimelineDate(experience.startDate)} - ${endDate}`;
 }
 
+function formatOptionalRange(startDate: string | null, endDate: string | null) {
+  if (!startDate && !endDate) {
+    return 'Dates not set';
+  }
+
+  return `${startDate ? formatTimelineDate(startDate) : 'Start not set'} - ${
+    endDate ? formatTimelineDate(endDate) : 'Present'
+  }`;
+}
+
 function ProjectImage({ project }: { project: Project }) {
   if (!project.imageUrl) {
     return null;
@@ -114,6 +135,8 @@ export function PublicHomePage({ onNavigate }: { onNavigate: Navigate }) {
   const profileQuery = usePublicProfile();
   const projectsQuery = usePublicProjects();
   const experienceQuery = usePublicExperiences();
+  const educationQuery = usePublicEducations();
+  const certificationQuery = usePublicCertifications();
   const resumeQuery = usePublicResume();
   const profile = profileQuery.data;
   const resume = resumeQuery.data;
@@ -121,6 +144,8 @@ export function PublicHomePage({ onNavigate }: { onNavigate: Navigate }) {
   const experiences = (experienceQuery.data ?? []).filter(
     (experience) => experience.isPublic,
   );
+  const educations = educationQuery.data ?? [];
+  const certifications = certificationQuery.data ?? [];
   const highlightedProjects = projects.slice(0, 3);
   const skills = useMemo(() => uniqueSkills(projects), [projects]);
 
@@ -372,6 +397,13 @@ export function PublicHomePage({ onNavigate }: { onNavigate: Navigate }) {
         ) : null}
       </section>
 
+      <CredentialsSection
+        educationQuery={educationQuery}
+        certificationQuery={certificationQuery}
+        educations={educations}
+        certifications={certifications}
+      />
+
       <section className="mt-8 grid gap-5" aria-labelledby="projects-heading">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -458,5 +490,217 @@ export function PublicHomePage({ onNavigate }: { onNavigate: Navigate }) {
         ) : null}
       </section>
     </main>
+  );
+}
+
+function CredentialsSection({
+  educationQuery,
+  certificationQuery,
+  educations,
+  certifications,
+}: {
+  educationQuery: ReturnType<typeof usePublicEducations>;
+  certificationQuery: ReturnType<typeof usePublicCertifications>;
+  educations: Education[];
+  certifications: Certification[];
+}) {
+  const hasEducation = educations.length > 0;
+  const hasCertifications = certifications.length > 0;
+  const shouldRender =
+    educationQuery.isLoading ||
+    certificationQuery.isLoading ||
+    educationQuery.isError ||
+    certificationQuery.isError ||
+    hasEducation ||
+    hasCertifications;
+
+  if (!shouldRender) {
+    return null;
+  }
+
+  return (
+    <section className="mt-8 grid gap-5" aria-labelledby="credentials-heading">
+      <div>
+        <p className="m-0 text-sm font-semibold uppercase tracking-wide text-teal-700">
+          Credentials
+        </p>
+        <h2
+          id="credentials-heading"
+          className="m-0 text-[28px] font-semibold text-slate-950"
+        >
+          Education and certifications
+        </h2>
+      </div>
+
+      {educationQuery.isLoading ? <p role="status">Loading education</p> : null}
+      {certificationQuery.isLoading ? (
+        <p role="status">Loading certifications</p>
+      ) : null}
+
+      {educationQuery.isError ? (
+        <CredentialError
+          message={errorMessage(
+            educationQuery.error,
+            'Could not load education.',
+          )}
+          retry={() => void educationQuery.refetch()}
+          label="Retry education"
+        />
+      ) : null}
+      {certificationQuery.isError ? (
+        <CredentialError
+          message={errorMessage(
+            certificationQuery.error,
+            'Could not load certifications.',
+          )}
+          retry={() => void certificationQuery.refetch()}
+          label="Retry certifications"
+        />
+      ) : null}
+
+      {hasEducation ? (
+        <EducationSection
+          educations={educations}
+          isOnlyVisibleSection={!hasCertifications}
+        />
+      ) : null}
+      {hasCertifications ? (
+        <CertificationSection
+          certifications={certifications}
+          isOnlyVisibleSection={!hasEducation}
+        />
+      ) : null}
+    </section>
+  );
+}
+
+function CredentialError({
+  message,
+  retry,
+  label,
+}: {
+  message: string;
+  retry: () => void;
+  label: string;
+}) {
+  return (
+    <div
+      className="grid gap-3 border border-red-300 bg-red-50 p-4"
+      role="alert"
+    >
+      <p className="m-0">{message}</p>
+      <button className={BUTTON_CLASS} type="button" onClick={retry}>
+        <RotateCcw size={18} aria-hidden="true" />
+        {label}
+      </button>
+    </div>
+  );
+}
+
+function EducationSection({
+  educations,
+  isOnlyVisibleSection,
+}: {
+  educations: Education[];
+  isOnlyVisibleSection: boolean;
+}) {
+  return (
+    <section className={PANEL_CLASS} aria-labelledby="education-heading">
+      <h3
+        id="education-heading"
+        className="m-0 flex items-center gap-2 text-xl font-semibold text-slate-950"
+      >
+        <BookOpen size={20} aria-hidden="true" />
+        Education
+      </h3>
+      <ol
+        className={`m-0 mt-4 grid list-none gap-3 p-0 ${
+          isOnlyVisibleSection ? '' : 'md:grid-cols-2'
+        }`}
+      >
+        {educations.map((education) => (
+          <li className="border border-slate-200 p-4" key={education.id}>
+            <article className="grid gap-2">
+              <div>
+                <h4 className="m-0 text-lg font-semibold text-slate-950">
+                  {education.credential}
+                </h4>
+                <p className="m-0 text-slate-700">{education.institution}</p>
+              </div>
+              <p className="m-0 text-slate-700">{education.fieldOfStudy}</p>
+              <p className="m-0 text-sm text-slate-600">
+                {formatOptionalRange(education.startDate, education.endDate)}
+                {education.location ? ` · ${education.location}` : ''}
+              </p>
+              <p className="m-0 whitespace-pre-line leading-7 text-slate-700">
+                {education.summary}
+              </p>
+            </article>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+function CertificationSection({
+  certifications,
+  isOnlyVisibleSection,
+}: {
+  certifications: Certification[];
+  isOnlyVisibleSection: boolean;
+}) {
+  return (
+    <section className={PANEL_CLASS} aria-labelledby="certifications-heading">
+      <h3
+        id="certifications-heading"
+        className="m-0 flex items-center gap-2 text-xl font-semibold text-slate-950"
+      >
+        <Award size={20} aria-hidden="true" />
+        Certifications
+      </h3>
+      <ol
+        className={`m-0 mt-4 grid list-none gap-3 p-0 ${
+          isOnlyVisibleSection ? '' : 'md:grid-cols-2'
+        }`}
+      >
+        {certifications.map((certification) => (
+          <li className="border border-slate-200 p-4" key={certification.id}>
+            <article className="grid gap-2">
+              <div>
+                <h4 className="m-0 text-lg font-semibold text-slate-950">
+                  {certification.name}
+                </h4>
+                <p className="m-0 text-slate-700">{certification.issuer}</p>
+              </div>
+              <p className="m-0 text-sm text-slate-600">
+                {formatOptionalRange(
+                  certification.issueDate,
+                  certification.expirationDate,
+                )}
+                {certification.credentialId
+                  ? ` · ID ${certification.credentialId}`
+                  : ''}
+              </p>
+              <p className="m-0 whitespace-pre-line leading-7 text-slate-700">
+                {certification.summary}
+              </p>
+              {certification.credentialUrl ? (
+                <a
+                  className={BUTTON_CLASS}
+                  href={certification.credentialUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label={`Open ${certification.name} credential`}
+                >
+                  View credential
+                  <ExternalLink size={16} aria-hidden="true" />
+                </a>
+              ) : null}
+            </article>
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }

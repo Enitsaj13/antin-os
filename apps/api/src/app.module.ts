@@ -8,6 +8,7 @@ import { ProfileModule } from './profile/profile.module';
 import { AuthModule } from './auth/auth.module';
 import { ExperienceModule } from './experience/experience.module';
 import { ResumeModule } from './resume/resume.module';
+import { CredentialsModule } from './credentials/credentials.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { ResumeModule } from './resume/resume.module';
     ProfileModule,
     ExperienceModule,
     ResumeModule,
+    CredentialsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -11,7 +11,10 @@ import { App } from './App';
 import { validateExperienceForm } from './ExperienceAdmin';
 import { constrainCrop, CropState, OUTPUT_SIZE } from './crop';
 import type {
+  Certification,
+  Education,
   Experience,
+  PortfolioSettings,
   Profile,
   Project,
   PublicResume,
@@ -21,6 +24,8 @@ import * as profileQueries from './queries/profile.queries';
 import * as profileMutations from './mutations/profile.mutations';
 import * as projectQueries from './queries/project.queries';
 import * as projectMutations from './mutations/project.mutations';
+import * as credentialsQueries from './queries/credentials.queries';
+import * as credentialsMutations from './mutations/credentials.mutations';
 import * as experienceQueries from './queries/experience.queries';
 import * as experienceMutations from './mutations/experience.mutations';
 import * as resumeQueries from './queries/resume.queries';
@@ -32,6 +37,8 @@ vi.mock('./queries/profile.queries');
 vi.mock('./mutations/profile.mutations');
 vi.mock('./queries/project.queries');
 vi.mock('./mutations/project.mutations');
+vi.mock('./queries/credentials.queries');
+vi.mock('./mutations/credentials.mutations');
 vi.mock('./queries/experience.queries');
 vi.mock('./mutations/experience.mutations');
 vi.mock('./queries/resume.queries');
@@ -43,6 +50,8 @@ const mockedProfileQueries = vi.mocked(profileQueries);
 const mockedProfileMutations = vi.mocked(profileMutations);
 const mockedProjectQueries = vi.mocked(projectQueries);
 const mockedProjectMutations = vi.mocked(projectMutations);
+const mockedCredentialsQueries = vi.mocked(credentialsQueries);
+const mockedCredentialsMutations = vi.mocked(credentialsMutations);
 const mockedExperienceQueries = vi.mocked(experienceQueries);
 const mockedExperienceMutations = vi.mocked(experienceMutations);
 const mockedResumeQueries = vi.mocked(resumeQueries);
@@ -57,6 +66,15 @@ const createProject = vi.fn();
 const updateProject = vi.fn();
 const deleteProject = vi.fn();
 const uploadProjectImage = vi.fn();
+const updatePortfolioSettings = vi.fn();
+const createEducation = vi.fn();
+const updateEducation = vi.fn();
+const deleteEducation = vi.fn();
+const reorderEducations = vi.fn();
+const createCertification = vi.fn();
+const updateCertification = vi.fn();
+const deleteCertification = vi.fn();
+const reorderCertifications = vi.fn();
 const createExperience = vi.fn();
 const updateExperience = vi.fn();
 const deleteExperience = vi.fn();
@@ -71,6 +89,13 @@ const refetchProjects = vi.fn();
 const refetchProject = vi.fn();
 const refetchPublicProjects = vi.fn();
 const refetchPublicProject = vi.fn();
+const refetchPortfolioSettings = vi.fn();
+const refetchEducations = vi.fn();
+const refetchEducation = vi.fn();
+const refetchPublicEducations = vi.fn();
+const refetchCertifications = vi.fn();
+const refetchCertification = vi.fn();
+const refetchPublicCertifications = vi.fn();
 const refetchExperiences = vi.fn();
 const refetchExperience = vi.fn();
 const refetchPublicExperiences = vi.fn();
@@ -130,6 +155,22 @@ function resetApiMocks() {
   mockedProjectMutations.useUpdateProjectMutation.mockReset();
   mockedProjectMutations.useDeleteProjectMutation.mockReset();
   mockedProjectMutations.useUploadProjectImageMutation.mockReset();
+  mockedCredentialsQueries.usePortfolioSettings.mockReset();
+  mockedCredentialsQueries.useEducations.mockReset();
+  mockedCredentialsQueries.useEducation.mockReset();
+  mockedCredentialsQueries.usePublicEducations.mockReset();
+  mockedCredentialsQueries.useCertifications.mockReset();
+  mockedCredentialsQueries.useCertification.mockReset();
+  mockedCredentialsQueries.usePublicCertifications.mockReset();
+  mockedCredentialsMutations.useUpdatePortfolioSettingsMutation.mockReset();
+  mockedCredentialsMutations.useCreateEducationMutation.mockReset();
+  mockedCredentialsMutations.useUpdateEducationMutation.mockReset();
+  mockedCredentialsMutations.useDeleteEducationMutation.mockReset();
+  mockedCredentialsMutations.useReorderEducationsMutation.mockReset();
+  mockedCredentialsMutations.useCreateCertificationMutation.mockReset();
+  mockedCredentialsMutations.useUpdateCertificationMutation.mockReset();
+  mockedCredentialsMutations.useDeleteCertificationMutation.mockReset();
+  mockedCredentialsMutations.useReorderCertificationsMutation.mockReset();
   mockedExperienceQueries.useExperiences.mockReset();
   mockedExperienceQueries.useExperience.mockReset();
   mockedExperienceQueries.usePublicExperiences.mockReset();
@@ -152,6 +193,15 @@ function resetApiMocks() {
   updateProject.mockReset();
   deleteProject.mockReset();
   uploadProjectImage.mockReset();
+  updatePortfolioSettings.mockReset();
+  createEducation.mockReset();
+  updateEducation.mockReset();
+  deleteEducation.mockReset();
+  reorderEducations.mockReset();
+  createCertification.mockReset();
+  updateCertification.mockReset();
+  deleteCertification.mockReset();
+  reorderCertifications.mockReset();
   createExperience.mockReset();
   updateExperience.mockReset();
   deleteExperience.mockReset();
@@ -166,6 +216,13 @@ function resetApiMocks() {
   refetchProject.mockReset();
   refetchPublicProjects.mockReset();
   refetchPublicProject.mockReset();
+  refetchPortfolioSettings.mockReset();
+  refetchEducations.mockReset();
+  refetchEducation.mockReset();
+  refetchPublicEducations.mockReset();
+  refetchCertifications.mockReset();
+  refetchCertification.mockReset();
+  refetchPublicCertifications.mockReset();
   refetchExperiences.mockReset();
   refetchExperience.mockReset();
   refetchPublicExperiences.mockReset();
@@ -272,6 +329,56 @@ function experience(overrides: Partial<Experience> = {}): Experience {
     summary: 'Built the Expo consumer guide app.',
     achievements: ['Built guided playback', 'Shipped TestFlight builds'],
     technologies: ['Expo', 'React Native', 'TypeScript'],
+    displayOrder: 0,
+    isPublic: true,
+    createdAt: '2026-08-13T10:00:00.000Z',
+    updatedAt: '2026-08-14T10:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function portfolioSettings(
+  overrides: Partial<PortfolioSettings> = {},
+): PortfolioSettings {
+  return {
+    id: 'settings-1',
+    singletonKey: 'owner',
+    showEducation: false,
+    showCertifications: false,
+    createdAt: '2026-08-25T10:00:00.000Z',
+    updatedAt: '2026-08-25T10:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function education(overrides: Partial<Education> = {}): Education {
+  return {
+    id: 'education-1',
+    institution: 'University of Cebu',
+    credential: 'BS Information Technology',
+    fieldOfStudy: 'Software Development',
+    location: 'Cebu, Philippines',
+    startDate: '2018-06-01T00:00:00.000Z',
+    endDate: '2022-04-01T00:00:00.000Z',
+    summary: 'Studied software engineering foundations.',
+    displayOrder: 0,
+    isPublic: true,
+    createdAt: '2026-08-13T10:00:00.000Z',
+    updatedAt: '2026-08-14T10:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function certification(overrides: Partial<Certification> = {}): Certification {
+  return {
+    id: 'certification-1',
+    name: 'AWS Cloud Practitioner',
+    issuer: 'Amazon Web Services',
+    issueDate: '2026-01-01T00:00:00.000Z',
+    expirationDate: '2029-01-01T00:00:00.000Z',
+    credentialId: 'AWS-123',
+    credentialUrl: 'https://example.com/aws',
+    summary: 'Cloud fundamentals certification.',
     displayOrder: 0,
     isPublic: true,
     createdAt: '2026-08-13T10:00:00.000Z',
@@ -394,6 +501,116 @@ function mockExperienceHooks(experiences: Experience[] = []) {
   >);
 }
 
+function mockCredentialsHooks({
+  settings = portfolioSettings(),
+  educations = [],
+  certifications = [],
+}: {
+  settings?: PortfolioSettings;
+  educations?: Education[];
+  certifications?: Certification[];
+} = {}) {
+  mockedCredentialsQueries.usePortfolioSettings.mockReturnValue({
+    data: settings,
+    isLoading: false,
+    isError: false,
+    error: null,
+    refetch: refetchPortfolioSettings,
+  } as unknown as ReturnType<typeof credentialsQueries.usePortfolioSettings>);
+  mockedCredentialsQueries.useEducations.mockReturnValue({
+    data: educations,
+    isLoading: false,
+    isError: false,
+    error: null,
+    refetch: refetchEducations,
+  } as unknown as ReturnType<typeof credentialsQueries.useEducations>);
+  mockedCredentialsQueries.useEducation.mockImplementation((id: string) => {
+    const found = educations.find((candidate) => candidate.id === id);
+
+    return {
+      data: found ?? null,
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: refetchEducation,
+    } as unknown as ReturnType<typeof credentialsQueries.useEducation>;
+  });
+  mockedCredentialsQueries.useCertifications.mockReturnValue({
+    data: certifications,
+    isLoading: false,
+    isError: false,
+    error: null,
+    refetch: refetchCertifications,
+  } as unknown as ReturnType<typeof credentialsQueries.useCertifications>);
+  mockedCredentialsQueries.useCertification.mockImplementation((id: string) => {
+    const found = certifications.find((candidate) => candidate.id === id);
+
+    return {
+      data: found ?? null,
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: refetchCertification,
+    } as unknown as ReturnType<typeof credentialsQueries.useCertification>;
+  });
+  mockedCredentialsMutations.useUpdatePortfolioSettingsMutation.mockReturnValue(
+    {
+      mutateAsync: updatePortfolioSettings,
+      isPending: false,
+    } as unknown as ReturnType<
+      typeof credentialsMutations.useUpdatePortfolioSettingsMutation
+    >,
+  );
+  mockedCredentialsMutations.useCreateEducationMutation.mockReturnValue({
+    mutateAsync: createEducation,
+    isPending: false,
+  } as unknown as ReturnType<
+    typeof credentialsMutations.useCreateEducationMutation
+  >);
+  mockedCredentialsMutations.useUpdateEducationMutation.mockReturnValue({
+    mutateAsync: updateEducation,
+    isPending: false,
+  } as unknown as ReturnType<
+    typeof credentialsMutations.useUpdateEducationMutation
+  >);
+  mockedCredentialsMutations.useDeleteEducationMutation.mockReturnValue({
+    mutateAsync: deleteEducation,
+    isPending: false,
+  } as unknown as ReturnType<
+    typeof credentialsMutations.useDeleteEducationMutation
+  >);
+  mockedCredentialsMutations.useReorderEducationsMutation.mockReturnValue({
+    mutateAsync: reorderEducations,
+    isPending: false,
+  } as unknown as ReturnType<
+    typeof credentialsMutations.useReorderEducationsMutation
+  >);
+  mockedCredentialsMutations.useCreateCertificationMutation.mockReturnValue({
+    mutateAsync: createCertification,
+    isPending: false,
+  } as unknown as ReturnType<
+    typeof credentialsMutations.useCreateCertificationMutation
+  >);
+  mockedCredentialsMutations.useUpdateCertificationMutation.mockReturnValue({
+    mutateAsync: updateCertification,
+    isPending: false,
+  } as unknown as ReturnType<
+    typeof credentialsMutations.useUpdateCertificationMutation
+  >);
+  mockedCredentialsMutations.useDeleteCertificationMutation.mockReturnValue({
+    mutateAsync: deleteCertification,
+    isPending: false,
+  } as unknown as ReturnType<
+    typeof credentialsMutations.useDeleteCertificationMutation
+  >);
+  mockedCredentialsMutations.useReorderCertificationsMutation.mockReturnValue({
+    mutateAsync: reorderCertifications,
+    isPending: false,
+  } as unknown as ReturnType<
+    typeof credentialsMutations.useReorderCertificationsMutation
+  >);
+}
+
 function mockResumeHooks(currentResume: Resume | null = null) {
   mockedResumeQueries.useResume.mockReturnValue({
     data: currentResume,
@@ -449,6 +666,31 @@ function mockPublicExperienceHooks(experiences: Experience[] = []) {
   } as unknown as ReturnType<typeof experienceQueries.usePublicExperiences>);
 }
 
+function mockPublicCredentialHooks({
+  educations = [],
+  certifications = [],
+}: {
+  educations?: Education[];
+  certifications?: Certification[];
+} = {}) {
+  mockedCredentialsQueries.usePublicEducations.mockReturnValue({
+    data: educations,
+    isLoading: false,
+    isError: false,
+    error: null,
+    refetch: refetchPublicEducations,
+  } as unknown as ReturnType<typeof credentialsQueries.usePublicEducations>);
+  mockedCredentialsQueries.usePublicCertifications.mockReturnValue({
+    data: certifications,
+    isLoading: false,
+    isError: false,
+    error: null,
+    refetch: refetchPublicCertifications,
+  } as unknown as ReturnType<
+    typeof credentialsQueries.usePublicCertifications
+  >);
+}
+
 function mockPublicResumeHook(currentResume: PublicResume | null = null) {
   mockedResumeQueries.usePublicResume.mockReturnValue({
     data: currentResume,
@@ -469,10 +711,12 @@ beforeEach(() => {
   mockAuthHooks(true);
   mockProfileHooks();
   mockProjectHooks();
+  mockCredentialsHooks();
   mockExperienceHooks();
   mockResumeHooks();
   mockPublicProfileHook();
   mockPublicProjectHooks();
+  mockPublicCredentialHooks();
   mockPublicExperienceHooks();
   mockPublicResumeHook();
 });
@@ -624,12 +868,20 @@ describe('admin navigation', () => {
 
     expect(window.location.pathname).toBe('/admin/resume');
     expect(screen.getByRole('heading', { name: 'Resume' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Credentials' }));
+
+    expect(window.location.pathname).toBe('/admin/credentials');
+    expect(
+      screen.getByRole('heading', { name: 'Public section visibility' }),
+    ).toBeInTheDocument();
   });
 
   it.each([
     '/admin/profile',
     '/admin/projects',
     '/admin/experience',
+    '/admin/credentials',
     '/admin/resume',
     '/admin/projects/new',
     '/admin/projects/project-1/edit',
@@ -748,6 +1000,17 @@ describe('public homepage', () => {
         'Managed experience detail should not run on public pages',
       );
     });
+    mockedCredentialsQueries.usePortfolioSettings.mockImplementation(() => {
+      throw new Error('Managed settings query should not run on public pages');
+    });
+    mockedCredentialsQueries.useEducations.mockImplementation(() => {
+      throw new Error('Managed education query should not run on public pages');
+    });
+    mockedCredentialsQueries.useCertifications.mockImplementation(() => {
+      throw new Error(
+        'Managed certification query should not run on public pages',
+      );
+    });
     mockedResumeQueries.useResume.mockImplementation(() => {
       throw new Error('Managed resume query should not run on public pages');
     });
@@ -758,12 +1021,19 @@ describe('public homepage', () => {
     expect(mockedProfileQueries.usePublicProfile).toHaveBeenCalled();
     expect(mockedProjectQueries.usePublicProjects).toHaveBeenCalled();
     expect(mockedExperienceQueries.usePublicExperiences).toHaveBeenCalled();
+    expect(mockedCredentialsQueries.usePublicEducations).toHaveBeenCalled();
+    expect(mockedCredentialsQueries.usePublicCertifications).toHaveBeenCalled();
     expect(mockedResumeQueries.usePublicResume).toHaveBeenCalled();
     expect(mockedProfileQueries.useProfile).not.toHaveBeenCalled();
     expect(mockedProjectQueries.useProjects).not.toHaveBeenCalled();
     expect(mockedProjectQueries.useProject).not.toHaveBeenCalled();
     expect(mockedExperienceQueries.useExperiences).not.toHaveBeenCalled();
     expect(mockedExperienceQueries.useExperience).not.toHaveBeenCalled();
+    expect(
+      mockedCredentialsQueries.usePortfolioSettings,
+    ).not.toHaveBeenCalled();
+    expect(mockedCredentialsQueries.useEducations).not.toHaveBeenCalled();
+    expect(mockedCredentialsQueries.useCertifications).not.toHaveBeenCalled();
     expect(mockedResumeQueries.useResume).not.toHaveBeenCalled();
     expect(
       screen.getByRole('heading', { name: 'Jastine Formentera' }),
@@ -803,6 +1073,10 @@ describe('public homepage', () => {
     });
     mockPublicProfileHook();
     mockPublicExperienceHooks([experience()]);
+    mockPublicCredentialHooks({
+      educations: [education()],
+      certifications: [certification()],
+    });
     mockPublicResumeHook(publicResume());
     mockPublicProjectHooks([
       featuredProject,
@@ -861,6 +1135,20 @@ describe('public homepage', () => {
     ).toBeInTheDocument();
     expect(screen.getByText('Built guided playback')).toBeInTheDocument();
     expect(screen.getByText('Current')).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'Education' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('BS Information Technology')).toBeInTheDocument();
+    expect(screen.getByText('University of Cebu')).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'Certifications' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('AWS Cloud Practitioner')).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', {
+        name: 'Open AWS Cloud Practitioner credential',
+      }),
+    ).toHaveAttribute('href', 'https://example.com/aws');
 
     expect(screen.getByText('Portfolio API')).toBeInTheDocument();
     expect(screen.getByText('Mobile Guide')).toBeInTheDocument();
@@ -912,6 +1200,22 @@ describe('public homepage', () => {
       error: null,
       refetch: refetchPublicResume,
     } as unknown as ReturnType<typeof resumeQueries.usePublicResume>);
+    mockedCredentialsQueries.usePublicEducations.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      isError: false,
+      error: null,
+      refetch: refetchPublicEducations,
+    } as unknown as ReturnType<typeof credentialsQueries.usePublicEducations>);
+    mockedCredentialsQueries.usePublicCertifications.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      isError: false,
+      error: null,
+      refetch: refetchPublicCertifications,
+    } as unknown as ReturnType<
+      typeof credentialsQueries.usePublicCertifications
+    >);
     mockedProjectQueries.usePublicProject.mockReturnValue({
       data: null,
       isLoading: false,
@@ -925,6 +1229,8 @@ describe('public homepage', () => {
     expect(screen.getByText('Loading profile')).toBeInTheDocument();
     expect(screen.getByText('Loading projects')).toBeInTheDocument();
     expect(screen.getByText('Loading experience')).toBeInTheDocument();
+    expect(screen.getByText('Loading education')).toBeInTheDocument();
+    expect(screen.getByText('Loading certifications')).toBeInTheDocument();
     expect(
       screen.queryByRole('link', { name: /Download .* CV/ }),
     ).not.toBeInTheDocument();
@@ -957,6 +1263,7 @@ describe('public homepage', () => {
       error: null,
       refetch: refetchPublicResume,
     } as unknown as ReturnType<typeof resumeQueries.usePublicResume>);
+    mockPublicCredentialHooks();
     rerender(<App />);
 
     expect(
@@ -973,6 +1280,12 @@ describe('public homepage', () => {
     expect(
       screen.getByText('No public experience entries are available.'),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: 'Education' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: 'Certifications' }),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByRole('link', { name: /Download .* CV/ }),
     ).not.toBeInTheDocument();
@@ -1005,11 +1318,29 @@ describe('public homepage', () => {
       error: new Error('resume failed'),
       refetch: refetchPublicResume,
     } as unknown as ReturnType<typeof resumeQueries.usePublicResume>);
+    mockedCredentialsQueries.usePublicEducations.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error('education failed'),
+      refetch: refetchPublicEducations,
+    } as unknown as ReturnType<typeof credentialsQueries.usePublicEducations>);
+    mockedCredentialsQueries.usePublicCertifications.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error('certifications failed'),
+      refetch: refetchPublicCertifications,
+    } as unknown as ReturnType<
+      typeof credentialsQueries.usePublicCertifications
+    >);
     rerender(<App />);
 
     expect(screen.getByText('profile failed')).toBeInTheDocument();
     expect(screen.getByText('projects failed')).toBeInTheDocument();
     expect(screen.getByText('experience failed')).toBeInTheDocument();
+    expect(screen.getByText('education failed')).toBeInTheDocument();
+    expect(screen.getByText('certifications failed')).toBeInTheDocument();
     expect(screen.queryByText('resume failed')).not.toBeInTheDocument();
     expect(
       screen.queryByRole('link', { name: /Download .* CV/ }),
@@ -1017,9 +1348,15 @@ describe('public homepage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry profile' }));
     fireEvent.click(screen.getByRole('button', { name: 'Retry projects' }));
     fireEvent.click(screen.getByRole('button', { name: 'Retry experience' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Retry education' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Retry certifications' }),
+    );
     expect(refetchPublicProfile).toHaveBeenCalled();
     expect(refetchPublicProjects).toHaveBeenCalled();
     expect(refetchPublicExperiences).toHaveBeenCalled();
+    expect(refetchPublicEducations).toHaveBeenCalled();
+    expect(refetchPublicCertifications).toHaveBeenCalled();
   });
 
   it('shows public homepage timeline in public order and hides unpublished entries defensively', () => {
@@ -1046,6 +1383,42 @@ describe('public homepage', () => {
     expect(screen.getByText('StepCast')).toBeInTheDocument();
     expect(screen.queryByText('Internal Role')).not.toBeInTheDocument();
     expect(screen.queryByText('Hidden Co')).not.toBeInTheDocument();
+  });
+
+  it('omits credentials sections when public APIs return disabled, empty, or unpublished-only lists', () => {
+    mockPublicCredentialHooks({
+      educations: [],
+      certifications: [],
+    });
+
+    renderApp('/');
+
+    expect(
+      screen.queryByRole('heading', { name: 'Education' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: 'Certifications' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('keeps education single-column when certifications are hidden', () => {
+    mockPublicCredentialHooks({
+      educations: [education()],
+      certifications: [],
+    });
+
+    renderApp('/');
+
+    const educationSection = screen
+      .getByRole('heading', { name: 'Education' })
+      .closest('section');
+    const educationList = educationSection?.querySelector('ol');
+
+    expect(educationList).not.toBeNull();
+    expect(educationList).not.toHaveClass('md:grid-cols-2');
+    expect(
+      screen.queryByRole('heading', { name: 'Certifications' }),
+    ).not.toBeInTheDocument();
   });
 
   it('sets route-aware public metadata', async () => {
@@ -1703,6 +2076,268 @@ describe('experience admin', () => {
     expect(
       within(dialog).getByRole('button', { name: 'Deleting' }),
     ).toBeDisabled();
+  });
+});
+
+describe('credentials admin', () => {
+  it('updates public-section toggles with pending, success, and error feedback', async () => {
+    updatePortfolioSettings.mockResolvedValue(
+      portfolioSettings({ showEducation: true }),
+    );
+
+    renderApp('/admin/credentials');
+
+    expect(
+      screen.getByText(/hides it publicly without deleting entries/i),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole('checkbox', {
+        name: 'Show Education on public portfolio',
+      }),
+    );
+
+    await waitFor(() =>
+      expect(updatePortfolioSettings).toHaveBeenCalledWith({
+        showEducation: true,
+      }),
+    );
+    expect(
+      await screen.findByText('Visibility settings saved.'),
+    ).toBeInTheDocument();
+
+    updatePortfolioSettings.mockRejectedValue(new Error('settings failed'));
+    fireEvent.click(
+      screen.getByRole('checkbox', {
+        name: 'Show Certifications on public portfolio',
+      }),
+    );
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'settings failed',
+    );
+  });
+
+  it('disables public-section toggles while a visibility update is pending', () => {
+    mockedCredentialsMutations.useUpdatePortfolioSettingsMutation.mockReturnValue(
+      {
+        mutateAsync: updatePortfolioSettings,
+        isPending: true,
+      } as unknown as ReturnType<
+        typeof credentialsMutations.useUpdatePortfolioSettingsMutation
+      >,
+    );
+
+    renderApp('/admin/credentials');
+
+    expect(
+      screen.getByRole('checkbox', {
+        name: 'Show Education on public portfolio',
+      }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole('checkbox', {
+        name: 'Show Certifications on public portfolio',
+      }),
+    ).toBeDisabled();
+  });
+
+  it('manages education and certifications while sections are disabled publicly', async () => {
+    mockCredentialsHooks({
+      settings: portfolioSettings({
+        showEducation: false,
+        showCertifications: false,
+      }),
+      educations: [education({ isPublic: false })],
+      certifications: [certification({ isPublic: false })],
+    });
+    createEducation.mockResolvedValue(education({ isPublic: false }));
+    updateEducation.mockResolvedValue(education());
+    createCertification.mockResolvedValue(certification({ isPublic: false }));
+    updateCertification.mockResolvedValue(certification());
+
+    renderApp('/admin/credentials');
+
+    expect(
+      screen.getByRole('checkbox', {
+        name: 'Show Education on public portfolio',
+      }),
+    ).not.toBeChecked();
+    expect(
+      screen.getByRole('checkbox', {
+        name: 'Show Certifications on public portfolio',
+      }),
+    ).not.toBeChecked();
+    expect(
+      screen.getAllByText('BS Information Technology')[0],
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByText('AWS Cloud Practitioner')[0],
+    ).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Institution'), {
+      target: { value: ' University of Cebu ' },
+    });
+    fireEvent.change(screen.getByLabelText('Credential or degree'), {
+      target: { value: ' BS Information Technology ' },
+    });
+    fireEvent.change(screen.getByLabelText('Field of study'), {
+      target: { value: ' Software Development ' },
+    });
+    fireEvent.change(screen.getByLabelText('Location'), {
+      target: { value: ' Cebu ' },
+    });
+    fireEvent.change(screen.getAllByLabelText('Summary')[0], {
+      target: { value: ' Studied software engineering. ' },
+    });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Save' })[0]);
+
+    await waitFor(() =>
+      expect(createEducation).toHaveBeenCalledWith({
+        institution: 'University of Cebu',
+        credential: 'BS Information Technology',
+        fieldOfStudy: 'Software Development',
+        location: 'Cebu',
+        startDate: null,
+        endDate: null,
+        summary: 'Studied software engineering.',
+        displayOrder: 0,
+        isPublic: false,
+      }),
+    );
+
+    fireEvent.change(screen.getByLabelText('Name'), {
+      target: { value: ' AWS Cloud Practitioner ' },
+    });
+    fireEvent.change(screen.getByLabelText('Issuer'), {
+      target: { value: ' Amazon Web Services ' },
+    });
+    fireEvent.change(screen.getByLabelText('Credential URL'), {
+      target: { value: ' https://example.com/aws ' },
+    });
+    fireEvent.change(screen.getAllByLabelText('Summary')[1], {
+      target: { value: ' Cloud fundamentals. ' },
+    });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Save' })[1]);
+
+    await waitFor(() =>
+      expect(createCertification).toHaveBeenCalledWith({
+        name: 'AWS Cloud Practitioner',
+        issuer: 'Amazon Web Services',
+        issueDate: null,
+        expirationDate: null,
+        credentialId: null,
+        credentialUrl: 'https://example.com/aws',
+        summary: 'Cloud fundamentals.',
+        displayOrder: 0,
+        isPublic: false,
+      }),
+    );
+
+    fireEvent.click(
+      screen.getAllByRole('button', {
+        name: 'Publish BS Information Technology at University of Cebu',
+      })[0],
+    );
+    fireEvent.click(
+      screen.getAllByRole('button', {
+        name: 'Publish AWS Cloud Practitioner from Amazon Web Services',
+      })[0],
+    );
+
+    await waitFor(() =>
+      expect(updateEducation).toHaveBeenCalledWith({
+        id: 'education-1',
+        input: { isPublic: true },
+      }),
+    );
+    await waitFor(() =>
+      expect(updateCertification).toHaveBeenCalledWith({
+        id: 'certification-1',
+        input: { isPublic: true },
+      }),
+    );
+  });
+
+  it('shows credential loading, empty, error, deletion, and reorder states', async () => {
+    mockedCredentialsQueries.useEducations.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      isError: false,
+      error: null,
+      refetch: refetchEducations,
+    } as unknown as ReturnType<typeof credentialsQueries.useEducations>);
+
+    const { rerender } = renderApp('/admin/credentials');
+
+    expect(screen.getByText('Loading education')).toBeInTheDocument();
+
+    mockedCredentialsQueries.useEducations.mockReturnValue({
+      data: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: refetchEducations,
+    } as unknown as ReturnType<typeof credentialsQueries.useEducations>);
+    rerender(<App />);
+
+    expect(
+      screen.getByText('No education entries are available.'),
+    ).toBeInTheDocument();
+
+    mockedCredentialsQueries.useEducations.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error('education load failed'),
+      refetch: refetchEducations,
+    } as unknown as ReturnType<typeof credentialsQueries.useEducations>);
+    rerender(<App />);
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'education load failed',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(refetchEducations).toHaveBeenCalled();
+
+    mockCredentialsHooks({
+      educations: [
+        education(),
+        education({
+          id: 'education-2',
+          institution: 'Another School',
+          credential: 'Diploma',
+          displayOrder: 1,
+        }),
+      ],
+    });
+    deleteEducation.mockRejectedValue(new Error('delete failed'));
+    reorderEducations.mockRejectedValue(new Error('reorder failed'));
+    rerender(<App />);
+
+    fireEvent.click(
+      screen.getAllByRole('button', {
+        name: 'Move BS Information Technology at University of Cebu down',
+      })[0],
+    );
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'reorder failed',
+    );
+
+    fireEvent.click(
+      screen.getAllByRole('button', {
+        name: 'Delete BS Information Technology at University of Cebu',
+      })[0],
+    );
+    expect(screen.getByRole('dialog')).toHaveTextContent(
+      'Delete BS Information Technology at University of Cebu?',
+    );
+    fireEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', {
+        name: 'Delete',
+      }),
+    );
+
+    expect(await screen.findByText('delete failed')).toBeInTheDocument();
   });
 });
 
