@@ -419,6 +419,244 @@ test('lets an authenticated owner control credential visibility on the public ho
   ).toBeVisible();
 });
 
+test('lets an authenticated owner manage a project case study and controls public visibility', async ({
+  page,
+}) => {
+  const project = {
+    id: 'project-1',
+    title: 'Portfolio API',
+    slug: 'portfolio-api',
+    summary: 'A portfolio API',
+    description: 'Detailed description',
+    techStack: ['NestJS', 'Prisma'],
+    repoUrl: 'https://github.com/example/repo',
+    liveUrl: 'https://example.com',
+    imageUrl: null,
+    imageKey: null,
+    isPublic: true,
+    createdAt: '2026-08-13T10:00:00.000Z',
+    updatedAt: '2026-08-14T10:00:00.000Z',
+  };
+  let caseStudy: null | {
+    id: string;
+    projectId: string;
+    context: string;
+    problem: string;
+    role: string;
+    approach: string;
+    responsibilities: string[];
+    technicalChallenges: string[];
+    outcomes: string[];
+    lessonsLearned: string | null;
+    isPublic: boolean;
+    createdAt: string;
+    updatedAt: string;
+  } = null;
+
+  await page.route('http://localhost:3001/auth/session', async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: corsHeaders,
+      json: { authenticated: true, user: { username: 'owner' } },
+    });
+  });
+
+  await page.route('http://localhost:3001/projects**', async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+
+    if (request.method() === 'OPTIONS') {
+      await route.fulfill({ status: 204, headers: corsHeaders });
+      return;
+    }
+
+    if (url.pathname === '/projects/project-1' && request.method() === 'GET') {
+      await route.fulfill({
+        status: 200,
+        headers: corsHeaders,
+        json: { ...project, caseStudy },
+      });
+      return;
+    }
+
+    if (
+      url.pathname === '/projects/project-1/case-study' &&
+      request.method() === 'GET'
+    ) {
+      if (!caseStudy) {
+        await route.fulfill({ status: 404, headers: corsHeaders, body: '' });
+        return;
+      }
+
+      await route.fulfill({
+        status: 200,
+        headers: corsHeaders,
+        json: caseStudy,
+      });
+      return;
+    }
+
+    if (
+      url.pathname === '/projects/project-1/case-study' &&
+      request.method() === 'POST'
+    ) {
+      caseStudy = {
+        id: 'case-study-1',
+        projectId: 'project-1',
+        ...(request.postDataJSON() as Omit<
+          NonNullable<typeof caseStudy>,
+          'id' | 'projectId' | 'createdAt' | 'updatedAt'
+        >),
+        createdAt: '2026-08-26T01:00:00.000Z',
+        updatedAt: '2026-08-26T01:00:00.000Z',
+      };
+      await route.fulfill({
+        status: 201,
+        headers: corsHeaders,
+        json: caseStudy,
+      });
+      return;
+    }
+
+    if (
+      url.pathname === '/projects/project-1/case-study' &&
+      request.method() === 'PATCH'
+    ) {
+      caseStudy = {
+        ...(caseStudy as NonNullable<typeof caseStudy>),
+        ...(request.postDataJSON() as Partial<NonNullable<typeof caseStudy>>),
+        updatedAt: '2026-08-26T02:00:00.000Z',
+      };
+      await route.fulfill({
+        status: 200,
+        headers: corsHeaders,
+        json: caseStudy,
+      });
+      return;
+    }
+
+    if (
+      url.pathname === '/projects/project-1/case-study/publication' &&
+      request.method() === 'PATCH'
+    ) {
+      caseStudy = {
+        ...(caseStudy as NonNullable<typeof caseStudy>),
+        isPublic: Boolean(
+          (request.postDataJSON() as { isPublic: boolean }).isPublic,
+        ),
+        updatedAt: '2026-08-26T03:00:00.000Z',
+      };
+      await route.fulfill({
+        status: 200,
+        headers: corsHeaders,
+        json: caseStudy,
+      });
+      return;
+    }
+
+    if (
+      url.pathname === '/projects/project-1/case-study' &&
+      request.method() === 'DELETE'
+    ) {
+      const deleted = caseStudy;
+      caseStudy = null;
+      await route.fulfill({
+        status: 200,
+        headers: corsHeaders,
+        json: deleted,
+      });
+      return;
+    }
+
+    await route.fulfill({ status: 404, headers: corsHeaders, body: '' });
+  });
+
+  await page.route('http://localhost:3001/public/projects**', async (route) => {
+    const url = new URL(route.request().url());
+
+    if (url.pathname === '/public/projects/portfolio-api') {
+      await route.fulfill({
+        status: 200,
+        headers: corsHeaders,
+        json: {
+          ...project,
+          caseStudy: caseStudy?.isPublic ? caseStudy : null,
+        },
+      });
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      headers: corsHeaders,
+      json: [project],
+    });
+  });
+
+  await page.goto('/admin/projects/project-1/edit');
+
+  await expect(
+    page.getByRole('heading', { name: 'Project case study' }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Start case study draft' }).click();
+  await page.getByLabel('Context').fill('The project needed deeper proof.');
+  await page
+    .getByLabel('Problem')
+    .fill('Recruiters need more than a project summary.');
+  await page.getByLabel('Role').fill('Full-stack developer');
+  await page.getByLabel('Approach').fill('Built scoped admin and public UI.');
+  await page
+    .getByRole('button', { name: 'Add responsibilities entry' })
+    .click();
+  await page
+    .getByRole('textbox', { name: 'Responsibilities entry' })
+    .fill('Owned the workflow');
+  await page.getByRole('button', { name: 'Add challenges entry' }).click();
+  await page
+    .getByRole('textbox', { name: 'Challenges entry' })
+    .fill('Kept drafts private');
+  await page.getByRole('button', { name: 'Add outcomes entry' }).click();
+  await page
+    .getByRole('textbox', { name: 'Outcomes entry' })
+    .fill('Published a case study');
+  await page.getByLabel('Lessons learned').fill('Structure improves review.');
+  await page.getByRole('button', { name: 'Save draft' }).click();
+  await expect(page.getByText('Case study draft saved.')).toBeVisible();
+  await expect(page.getByText('Draft case study')).toBeVisible();
+
+  await page.goto('/projects/portfolio-api');
+  await expect(
+    page.getByRole('heading', { name: 'How this project was built' }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByText('Recruiters need more than a project summary.'),
+  ).toHaveCount(0);
+
+  await page.goto('/admin/projects/project-1/edit');
+  await page.getByRole('button', { name: 'Publish' }).click();
+  await expect(page.getByText('Case study published.')).toBeVisible();
+  await expect(page.getByText('Published case study')).toBeVisible();
+
+  await page.goto('/projects/portfolio-api');
+  await expect(
+    page.getByRole('heading', { name: 'How this project was built' }),
+  ).toBeVisible();
+  await expect(
+    page.getByText('Recruiters need more than a project summary.'),
+  ).toBeVisible();
+  await expect(page.getByText('Owned the workflow')).toBeVisible();
+
+  await page.goto('/admin/projects/project-1/edit');
+  await page.getByRole('button', { name: 'Unpublish' }).click();
+  await expect(page.getByText('Case study unpublished.')).toBeVisible();
+  await page.getByRole('button', { name: 'Remove case study' }).click();
+  await expect(
+    page.getByText('Remove case study for Portfolio API?'),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Remove', exact: true }).click();
+  await expect(page.getByText('Case study removed.')).toBeVisible();
+});
+
 test('lets an authenticated owner manage and publish a resume', async ({
   page,
 }) => {

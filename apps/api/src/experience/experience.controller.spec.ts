@@ -139,9 +139,10 @@ describe('ExperienceController', () => {
       technologies: [],
     });
     prisma.experience.create.mockResolvedValue(created);
-    const payload = validPayload();
-    delete payload.achievements;
-    delete payload.technologies;
+    const payload = validPayload({
+      achievements: undefined,
+      technologies: undefined,
+    });
 
     const response = await owner.post('/experience').send(payload).expect(201);
 

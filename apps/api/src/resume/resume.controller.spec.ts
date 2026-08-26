@@ -128,7 +128,7 @@ describe('ResumeController', () => {
     expect(prisma.resume.upsert).not.toHaveBeenCalled();
     expect(prisma.resume.update).not.toHaveBeenCalled();
     expect(prisma.resume.delete).not.toHaveBeenCalled();
-    expect(storage.upload).not.toHaveBeenCalled();
+    expect(storage.upload.mock.calls).toHaveLength(0);
   });
 
   it('uploads, replaces as unpublished, publishes, unpublishes, and removes the singleton resume', async () => {
@@ -154,12 +154,19 @@ describe('ResumeController', () => {
       })
       .expect(201);
 
-    expect(upload.body).toMatchObject({
+    const uploadBody = upload.body as {
+      originalFilename: string;
+      contentType: string;
+      isPublic: boolean;
+      objectKey?: string;
+    };
+
+    expect(uploadBody).toMatchObject({
       originalFilename: 'Jastine-CV.pdf',
       contentType: 'application/pdf',
       isPublic: false,
     });
-    expect(upload.body.objectKey).toBeUndefined();
+    expect(uploadBody.objectKey).toBeUndefined();
     expect(prisma.resume.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { singletonKey: RESUME_SINGLETON_KEY },
@@ -175,23 +182,25 @@ describe('ResumeController', () => {
         contentType: 'application/pdf',
       })
       .expect(201);
-    expect(storage.delete).toHaveBeenCalledWith('resumes/old.pdf');
+    expect(storage.delete.mock.calls).toContainEqual(['resumes/old.pdf']);
 
     const published = await owner
       .patch('/resume/publication')
       .send({ isPublic: true })
       .expect(200);
-    expect(published.body.isPublic).toBe(true);
+    expect((published.body as { isPublic: boolean }).isPublic).toBe(true);
 
     const unpublished = await owner
       .patch('/resume/publication')
       .send({ isPublic: false })
       .expect(200);
-    expect(unpublished.body.isPublic).toBe(false);
+    expect((unpublished.body as { isPublic: boolean }).isPublic).toBe(false);
 
     const removed = await owner.delete('/resume').expect(200);
-    expect(removed.body.originalFilename).toBe('Jastine-CV.pdf');
-    expect(storage.delete).toHaveBeenCalledWith('resumes/current.pdf');
+    expect(
+      (removed.body as { originalFilename: string }).originalFilename,
+    ).toBe('Jastine-CV.pdf');
+    expect(storage.delete.mock.calls).toContainEqual(['resumes/current.pdf']);
   });
 
   it('rejects invalid resume uploads', async () => {
@@ -225,7 +234,7 @@ describe('ResumeController', () => {
       })
       .expect(415);
 
-    expect(storage.upload).not.toHaveBeenCalled();
+    expect(storage.upload.mock.calls).toHaveLength(0);
   });
 
   it('rejects oversized resume uploads', async () => {
@@ -259,12 +268,19 @@ describe('ResumeController', () => {
     const metadata = await request(app.getHttpServer())
       .get('/public/resume')
       .expect(200);
-    expect(metadata.body).toMatchObject({
+    const metadataBody = metadata.body as {
+      originalFilename: string;
+      isPublic: boolean;
+      downloadUrl: string;
+      objectKey?: string;
+    };
+
+    expect(metadataBody).toMatchObject({
       originalFilename: 'Jastine-CV.pdf',
       isPublic: true,
       downloadUrl: '/public/resume/download',
     });
-    expect(metadata.body.objectKey).toBeUndefined();
+    expect(metadataBody.objectKey).toBeUndefined();
 
     const download = await request(app.getHttpServer())
       .get('/public/resume/download')
@@ -290,8 +306,8 @@ describe('ResumeController', () => {
       })
       .expect(500);
 
-    expect(storage.delete).toHaveBeenCalledWith('resumes/new.pdf');
-    expect(storage.delete).not.toHaveBeenCalledWith('resumes/old.pdf');
+    expect(storage.delete.mock.calls).toContainEqual(['resumes/new.pdf']);
+    expect(storage.delete.mock.calls).not.toContainEqual(['resumes/old.pdf']);
   });
 
   it('preserves new resume metadata when previous object cleanup fails', async () => {
@@ -311,7 +327,9 @@ describe('ResumeController', () => {
       })
       .expect(201);
 
-    expect(response.body.originalFilename).toBe('Jastine-CV.pdf');
-    expect(storage.delete).toHaveBeenCalledWith('resumes/old.pdf');
+    expect(
+      (response.body as { originalFilename: string }).originalFilename,
+    ).toBe('Jastine-CV.pdf');
+    expect(storage.delete.mock.calls).toContainEqual(['resumes/old.pdf']);
   });
 });

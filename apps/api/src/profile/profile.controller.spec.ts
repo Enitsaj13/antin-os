@@ -172,8 +172,8 @@ describe('ProfileController', () => {
 
     expect(prisma.profile.upsert).not.toHaveBeenCalled();
     expect(prisma.profile.update).not.toHaveBeenCalled();
-    expect(storage.upload).not.toHaveBeenCalled();
-    expect(storage.delete).not.toHaveBeenCalled();
+    expect(storage.upload.mock.calls).toHaveLength(0);
+    expect(storage.delete.mock.calls).toHaveLength(0);
   });
 
   it('creates and updates the singleton profile', async () => {

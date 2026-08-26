@@ -1,11 +1,15 @@
 import type {
+  CreateProjectCaseStudyInput,
   CreateProjectInput,
   ProjectImageUpload,
   Project,
+  ProjectCaseStudy,
+  UpdateProjectCaseStudyInput,
+  UpdateProjectCaseStudyPublicationInput,
   UpdateProjectInput,
   CreateProjectImageUploadInput,
 } from '@antin-os/shared';
-import { requestJson, uploadBinary } from './http-client';
+import { requestJson, requestNullableJson, uploadBinary } from './http-client';
 
 export function createProject(input: CreateProjectInput): Promise<Project> {
   return requestJson<Project>('/projects', {
@@ -21,6 +25,67 @@ export function getProjects(): Promise<Project[]> {
 
 export function getProject(idOrSlug: string): Promise<Project> {
   return requestJson<Project>(`/projects/${encodeURIComponent(idOrSlug)}`);
+}
+
+export function getProjectCaseStudy(
+  projectId: string,
+): Promise<ProjectCaseStudy | null> {
+  return requestNullableJson<ProjectCaseStudy>(
+    `/projects/${encodeURIComponent(projectId)}/case-study`,
+  );
+}
+
+export function createProjectCaseStudy(
+  projectId: string,
+  input: CreateProjectCaseStudyInput,
+): Promise<ProjectCaseStudy> {
+  return requestJson<ProjectCaseStudy>(
+    `/projects/${encodeURIComponent(projectId)}/case-study`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function updateProjectCaseStudy(
+  projectId: string,
+  input: UpdateProjectCaseStudyInput,
+): Promise<ProjectCaseStudy> {
+  return requestJson<ProjectCaseStudy>(
+    `/projects/${encodeURIComponent(projectId)}/case-study`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function updateProjectCaseStudyPublication(
+  projectId: string,
+  input: UpdateProjectCaseStudyPublicationInput,
+): Promise<ProjectCaseStudy> {
+  return requestJson<ProjectCaseStudy>(
+    `/projects/${encodeURIComponent(projectId)}/case-study/publication`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function deleteProjectCaseStudy(
+  projectId: string,
+): Promise<ProjectCaseStudy> {
+  return requestJson<ProjectCaseStudy>(
+    `/projects/${encodeURIComponent(projectId)}/case-study`,
+    {
+      method: 'DELETE',
+    },
+  );
 }
 
 export function updateProject(

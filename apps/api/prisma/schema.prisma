@@ -25,6 +25,28 @@ model Project {
   isPublic    Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  caseStudy ProjectCaseStudy?
+}
+
+model ProjectCaseStudy {
+  id                    String   @id @default(cuid())
+  projectId             String   @unique
+  context               String
+  problem               String
+  role                  String
+  approach              String
+  responsibilities      String[]
+  technicalChallenges   String[]
+  outcomes              String[]
+  lessonsLearned        String?
+  isPublic              Boolean  @default(false)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([isPublic])
 }
 
 model Profile {

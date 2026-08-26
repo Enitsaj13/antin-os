@@ -300,14 +300,14 @@ describe('CredentialsController', () => {
       data: expect.objectContaining({
         institution: 'University of Cebu',
         isPublic: false,
-      }),
+      }) as unknown,
       select: educationSelect,
     });
     expect(prisma.certification.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         name: 'AWS Cloud Practitioner',
         isPublic: false,
-      }),
+      }) as unknown,
       select: certificationSelect,
     });
     expect(prisma.$transaction).toHaveBeenCalledTimes(2);

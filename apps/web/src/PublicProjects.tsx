@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { ArrowLeft, ExternalLink, RotateCcw } from 'lucide-react';
-import type { Project } from '@antin-os/shared';
+import type { Project, ProjectCaseStudy } from '@antin-os/shared';
 import { usePublicProject, usePublicProjects } from './queries/project.queries';
 import { setDocumentMetadata } from './metadata';
 
@@ -65,6 +65,98 @@ function TechStack({ values }: { values: string[] }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+function CaseStudyTextSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: string;
+}) {
+  return (
+    <section className="grid max-w-4xl content-start gap-2">
+      <h3 className="m-0 text-base font-semibold text-slate-950">{title}</h3>
+      <p className="m-0 whitespace-pre-line leading-7 text-slate-700">
+        {children}
+      </p>
+    </section>
+  );
+}
+
+function CaseStudyListSection({
+  title,
+  entries,
+}: {
+  title: string;
+  entries: string[];
+}) {
+  if (entries.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="grid content-start gap-3">
+      <h3 className="m-0 text-base font-semibold text-slate-950">{title}</h3>
+      <ul className="m-0 grid list-disc gap-3 pl-5 text-slate-700">
+        {entries.map((entry, index) => (
+          <li
+            className="leading-7 marker:text-teal-700"
+            key={`${title}-${index}`}
+          >
+            {entry}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function ProjectCaseStudySection({
+  caseStudy,
+}: {
+  caseStudy: ProjectCaseStudy;
+}) {
+  return (
+    <section className={`${PANEL_CLASS} grid gap-7 lg:col-span-2`}>
+      <header>
+        <p className="m-0 text-sm font-semibold uppercase tracking-wide text-teal-700">
+          Case study
+        </p>
+        <h2 className="m-0 text-[26px] font-semibold text-slate-950">
+          How this project was built
+        </h2>
+      </header>
+      <div className="grid gap-6">
+        <CaseStudyTextSection title="Context">
+          {caseStudy.context}
+        </CaseStudyTextSection>
+        <CaseStudyTextSection title="Problem">
+          {caseStudy.problem}
+        </CaseStudyTextSection>
+        <CaseStudyTextSection title="Role">{caseStudy.role}</CaseStudyTextSection>
+        <CaseStudyTextSection title="Approach">
+          {caseStudy.approach}
+        </CaseStudyTextSection>
+      </div>
+      <div className="grid gap-6 border-t border-slate-200 pt-6 lg:grid-cols-3 lg:items-start">
+        <CaseStudyListSection
+          title="Responsibilities"
+          entries={caseStudy.responsibilities}
+        />
+        <CaseStudyListSection
+          title="Challenges"
+          entries={caseStudy.technicalChallenges}
+        />
+        <CaseStudyListSection title="Outcomes" entries={caseStudy.outcomes} />
+      </div>
+      {caseStudy.lessonsLearned ? (
+        <CaseStudyTextSection title="Lessons learned">
+          {caseStudy.lessonsLearned}
+        </CaseStudyTextSection>
+      ) : null}
+    </section>
   );
 }
 
@@ -168,7 +260,9 @@ export function PublicProjectDetailPage({
       project
         ? `${project.title} | AntinOS Portfolio`
         : 'Project | AntinOS Portfolio',
-      project?.summary ?? 'View a published AntinOS portfolio project.',
+      project?.caseStudy?.problem ??
+        project?.summary ??
+        'View a published AntinOS portfolio project.',
     );
   }, [project]);
 
@@ -290,6 +384,10 @@ export function PublicProjectDetailPage({
               </div>
             </div>
           </aside>
+
+          {project.caseStudy ? (
+            <ProjectCaseStudySection caseStudy={project.caseStudy} />
+          ) : null}
         </article>
       ) : null}
     </main>

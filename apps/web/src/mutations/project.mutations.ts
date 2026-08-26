@@ -1,8 +1,18 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import type { CreateProjectInput, UpdateProjectInput } from '@antin-os/shared';
+import type {
+  CreateProjectCaseStudyInput,
+  CreateProjectInput,
+  UpdateProjectCaseStudyInput,
+  UpdateProjectCaseStudyPublicationInput,
+  UpdateProjectInput,
+} from '@antin-os/shared';
 import {
+  createProjectCaseStudy,
   createProject,
+  deleteProjectCaseStudy,
   deleteProject,
+  updateProjectCaseStudy,
+  updateProjectCaseStudyPublication,
   updateProject,
   uploadProjectImage,
 } from '../api-client';
@@ -51,5 +61,80 @@ export function useDeleteProjectMutation() {
 export function useUploadProjectImageMutation() {
   return useMutation({
     mutationFn: uploadProjectImage,
+  });
+}
+
+function invalidateProjectCaseStudyQueries(
+  queryClient: ReturnType<typeof useQueryClient>,
+  projectId: string,
+) {
+  void queryClient.invalidateQueries({ queryKey: projectQueryKeys.all });
+  void queryClient.invalidateQueries({
+    queryKey: projectQueryKeys.managedDetail(projectId),
+  });
+  void queryClient.invalidateQueries({
+    queryKey: projectQueryKeys.managedCaseStudy(projectId),
+  });
+}
+
+export function useCreateProjectCaseStudyMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      projectId,
+      input,
+    }: {
+      projectId: string;
+      input: CreateProjectCaseStudyInput;
+    }) => createProjectCaseStudy(projectId, input),
+    onSuccess: (_caseStudy, variables) => {
+      invalidateProjectCaseStudyQueries(queryClient, variables.projectId);
+    },
+  });
+}
+
+export function useUpdateProjectCaseStudyMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      projectId,
+      input,
+    }: {
+      projectId: string;
+      input: UpdateProjectCaseStudyInput;
+    }) => updateProjectCaseStudy(projectId, input),
+    onSuccess: (_caseStudy, variables) => {
+      invalidateProjectCaseStudyQueries(queryClient, variables.projectId);
+    },
+  });
+}
+
+export function useUpdateProjectCaseStudyPublicationMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      projectId,
+      input,
+    }: {
+      projectId: string;
+      input: UpdateProjectCaseStudyPublicationInput;
+    }) => updateProjectCaseStudyPublication(projectId, input),
+    onSuccess: (_caseStudy, variables) => {
+      invalidateProjectCaseStudyQueries(queryClient, variables.projectId);
+    },
+  });
+}
+
+export function useDeleteProjectCaseStudyMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (projectId: string) => deleteProjectCaseStudy(projectId),
+    onSuccess: (_caseStudy, projectId) => {
+      invalidateProjectCaseStudyQueries(queryClient, projectId);
+    },
   });
 }

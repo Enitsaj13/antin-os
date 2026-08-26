@@ -6,16 +6,23 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import type { ProjectImageUpload } from '@antin-os/shared';
+import type { ProjectCaseStudy, ProjectImageUpload } from '@antin-os/shared';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@prisma/prisma.service';
+import { CreateProjectCaseStudyDto } from './dto/create-project-case-study.dto';
 import { CreateProjectImageUploadDto } from './dto/create-project-image-upload.dto';
 import { CreateProjectDto } from './dto/create-project.dto';
+import { UpdateProjectCaseStudyPublicationDto } from './dto/update-project-case-study-publication.dto';
+import { UpdateProjectCaseStudyDto } from './dto/update-project-case-study.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import {
+  ProjectCaseStudyRecord,
+  ProjectWithCaseStudyRecord,
   ProjectRecord,
   ProjectResponse,
+  projectCaseStudySelect,
   projectSelect,
+  toProjectCaseStudyResponse,
   toProjectResponse,
 } from './project-response';
 import { PROJECT_IMAGE_STORAGE } from './storage/project-image-storage';
@@ -36,6 +43,24 @@ type ProjectCreateData = Pick<
 >;
 
 type ProjectUpdateData = Partial<ProjectCreateData>;
+
+type ProjectCaseStudyCreateData = Pick<
+  Prisma.ProjectCaseStudyUncheckedCreateInput,
+  | 'projectId'
+  | 'context'
+  | 'problem'
+  | 'role'
+  | 'approach'
+  | 'responsibilities'
+  | 'technicalChallenges'
+  | 'outcomes'
+  | 'lessonsLearned'
+  | 'isPublic'
+>;
+
+type ProjectCaseStudyUpdateData = Partial<
+  Omit<ProjectCaseStudyCreateData, 'projectId'>
+>;
 
 @Injectable()
 export class ProjectsService {
@@ -59,6 +84,7 @@ export class ProjectsService {
           repoUrl: dto.repoUrl,
           liveUrl: dto.liveUrl,
           imageUrl: dto.imageUrl,
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
           imageKey: dto.imageKey,
           isPublic: dto.isPublic ?? false,
         } satisfies ProjectCreateData,
@@ -85,7 +111,10 @@ export class ProjectsService {
       where: {
         OR: [{ id: idOrSlug }, { slug: idOrSlug }],
       },
-      select: projectSelect,
+      select: {
+        ...projectSelect,
+        caseStudy: { select: projectCaseStudySelect },
+      },
     });
 
     return this.toResponse(this.requireProject(project));
@@ -157,10 +186,107 @@ export class ProjectsService {
   async findPublicBySlug(slug: string): Promise<ProjectResponse> {
     const project = await this.prisma.project.findFirst({
       where: { slug, isPublic: true },
-      select: projectSelect,
+      select: {
+        ...projectSelect,
+        caseStudy: { select: projectCaseStudySelect },
+      },
     });
 
-    return this.toResponse(this.requireProject(project));
+    const response = await this.toResponse(this.requireProject(project));
+
+    if (response.caseStudy && !response.caseStudy.isPublic) {
+      response.caseStudy = null;
+    }
+
+    return response;
+  }
+
+  async findCaseStudy(projectId: string): Promise<ProjectCaseStudy> {
+    await this.ensureExists(projectId);
+
+    const caseStudy = await this.prisma.projectCaseStudy.findUnique({
+      where: { projectId },
+      select: projectCaseStudySelect,
+    });
+
+    return toProjectCaseStudyResponse(this.requireCaseStudy(caseStudy));
+  }
+
+  async createCaseStudy(
+    projectId: string,
+    dto: CreateProjectCaseStudyDto,
+  ): Promise<ProjectCaseStudy> {
+    await this.ensureExists(projectId);
+
+    try {
+      const caseStudy = await this.prisma.projectCaseStudy.create({
+        data: {
+          projectId,
+          context: dto.context,
+          problem: dto.problem,
+          role: dto.role,
+          approach: dto.approach,
+          responsibilities: dto.responsibilities ?? [],
+          technicalChallenges: dto.technicalChallenges ?? [],
+          outcomes: dto.outcomes ?? [],
+          lessonsLearned: dto.lessonsLearned ?? null,
+          isPublic: dto.isPublic ?? false,
+        } satisfies ProjectCaseStudyCreateData,
+        select: projectCaseStudySelect,
+      });
+
+      return toProjectCaseStudyResponse(caseStudy);
+    } catch (error) {
+      this.handleCaseStudyWriteError(error);
+    }
+  }
+
+  async updateCaseStudy(
+    projectId: string,
+    dto: UpdateProjectCaseStudyDto,
+  ): Promise<ProjectCaseStudy> {
+    await this.ensureExists(projectId);
+    const data = this.toCaseStudyUpdateData(dto);
+
+    if (Object.keys(data).length === 0) {
+      throw new BadRequestException(
+        'Update request must include at least one field',
+      );
+    }
+
+    try {
+      const caseStudy = await this.prisma.projectCaseStudy.update({
+        where: { projectId },
+        data,
+        select: projectCaseStudySelect,
+      });
+
+      return toProjectCaseStudyResponse(caseStudy);
+    } catch (error) {
+      this.handleCaseStudyWriteError(error);
+    }
+  }
+
+  async updateCaseStudyPublication(
+    projectId: string,
+    dto: UpdateProjectCaseStudyPublicationDto,
+  ): Promise<ProjectCaseStudy> {
+    return this.updateCaseStudy(projectId, { isPublic: dto.isPublic });
+  }
+
+  async removeCaseStudy(projectId: string): Promise<ProjectCaseStudy> {
+    await this.ensureExists(projectId);
+
+    try {
+      const caseStudy = await this.prisma.projectCaseStudy.delete({
+        where: { projectId },
+        select: projectCaseStudySelect,
+      });
+
+      return toProjectCaseStudyResponse(caseStudy);
+    } catch (error) {
+      this.handleCaseStudyWriteError(error);
+    }
   }
 
   private toUpdateData(dto: UpdateProjectDto): ProjectUpdateData {
@@ -199,7 +325,9 @@ export class ProjectsService {
     }
   }
 
-  private requireProject(project: ProjectRecord | null): ProjectRecord {
+  private requireProject(
+    project: ProjectWithCaseStudyRecord | ProjectRecord | null,
+  ): ProjectWithCaseStudyRecord | ProjectRecord {
     if (!project) {
       throw new NotFoundException('Project not found');
     }
@@ -207,7 +335,19 @@ export class ProjectsService {
     return project;
   }
 
-  private async toResponse(project: ProjectRecord): Promise<ProjectResponse> {
+  private requireCaseStudy(
+    caseStudy: ProjectCaseStudyRecord | null,
+  ): ProjectCaseStudyRecord {
+    if (!caseStudy) {
+      throw new NotFoundException('Project case study not found');
+    }
+
+    return caseStudy;
+  }
+
+  private async toResponse(
+    project: ProjectWithCaseStudyRecord | ProjectRecord,
+  ): Promise<ProjectResponse> {
     const response = toProjectResponse(project);
 
     if (!project.imageKey) {
@@ -226,6 +366,64 @@ export class ProjectsService {
       error.code === 'P2002'
     ) {
       throw new ConflictException('Project slug already exists');
+    }
+
+    throw error;
+  }
+
+  private toCaseStudyUpdateData(
+    dto: UpdateProjectCaseStudyDto,
+  ): ProjectCaseStudyUpdateData {
+    const data: ProjectCaseStudyUpdateData = {};
+
+    if (dto.context !== undefined) {
+      data.context = dto.context;
+    }
+
+    if (dto.problem !== undefined) {
+      data.problem = dto.problem;
+    }
+
+    if (dto.role !== undefined) {
+      data.role = dto.role;
+    }
+
+    if (dto.approach !== undefined) {
+      data.approach = dto.approach;
+    }
+
+    if (dto.responsibilities !== undefined) {
+      data.responsibilities = dto.responsibilities;
+    }
+
+    if (dto.technicalChallenges !== undefined) {
+      data.technicalChallenges = dto.technicalChallenges;
+    }
+
+    if (dto.outcomes !== undefined) {
+      data.outcomes = dto.outcomes;
+    }
+
+    if (dto.lessonsLearned !== undefined) {
+      data.lessonsLearned = dto.lessonsLearned;
+    }
+
+    if (dto.isPublic !== undefined) {
+      data.isPublic = dto.isPublic;
+    }
+
+    return data;
+  }
+
+  private handleCaseStudyWriteError(error: unknown): never {
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      if (error.code === 'P2002') {
+        throw new ConflictException('Project case study already exists');
+      }
+
+      if (error.code === 'P2025') {
+        throw new NotFoundException('Project case study not found');
+      }
     }
 
     throw error;

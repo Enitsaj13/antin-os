@@ -91,7 +91,9 @@ describe('AuthController', () => {
       .send({ username: 'missing', password: 'wrong-password' })
       .expect(401)
       .expect(({ body }) => {
-        expect(body.message).toBe('Invalid credentials');
+        expect((body as { message: string }).message).toBe(
+          'Invalid credentials',
+        );
       });
 
     await request(app.getHttpServer())
@@ -99,7 +101,9 @@ describe('AuthController', () => {
       .send({ username: 'owner', password: 'wrong-password' })
       .expect(401)
       .expect(({ body }) => {
-        expect(body.message).toBe('Invalid credentials');
+        expect((body as { message: string }).message).toBe(
+          'Invalid credentials',
+        );
       });
 
     await request(app.getHttpServer())

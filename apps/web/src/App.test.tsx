@@ -17,6 +17,7 @@ import type {
   PortfolioSettings,
   Profile,
   Project,
+  ProjectCaseStudy,
   PublicResume,
   Resume,
 } from '@antin-os/shared';
@@ -66,6 +67,10 @@ const createProject = vi.fn();
 const updateProject = vi.fn();
 const deleteProject = vi.fn();
 const uploadProjectImage = vi.fn();
+const createProjectCaseStudy = vi.fn();
+const updateProjectCaseStudy = vi.fn();
+const updateProjectCaseStudyPublication = vi.fn();
+const deleteProjectCaseStudy = vi.fn();
 const updatePortfolioSettings = vi.fn();
 const createEducation = vi.fn();
 const updateEducation = vi.fn();
@@ -87,6 +92,7 @@ const logoutAdmin = vi.fn();
 const refetchPublicProfile = vi.fn();
 const refetchProjects = vi.fn();
 const refetchProject = vi.fn();
+const refetchProjectCaseStudy = vi.fn();
 const refetchPublicProjects = vi.fn();
 const refetchPublicProject = vi.fn();
 const refetchPortfolioSettings = vi.fn();
@@ -149,12 +155,17 @@ function resetApiMocks() {
   mockedProfileMutations.useRemoveProfilePictureMutation.mockReset();
   mockedProjectQueries.useProjects.mockReset();
   mockedProjectQueries.useProject.mockReset();
+  mockedProjectQueries.useProjectCaseStudy.mockReset();
   mockedProjectQueries.usePublicProjects.mockReset();
   mockedProjectQueries.usePublicProject.mockReset();
   mockedProjectMutations.useCreateProjectMutation.mockReset();
   mockedProjectMutations.useUpdateProjectMutation.mockReset();
   mockedProjectMutations.useDeleteProjectMutation.mockReset();
   mockedProjectMutations.useUploadProjectImageMutation.mockReset();
+  mockedProjectMutations.useCreateProjectCaseStudyMutation.mockReset();
+  mockedProjectMutations.useUpdateProjectCaseStudyMutation.mockReset();
+  mockedProjectMutations.useUpdateProjectCaseStudyPublicationMutation.mockReset();
+  mockedProjectMutations.useDeleteProjectCaseStudyMutation.mockReset();
   mockedCredentialsQueries.usePortfolioSettings.mockReset();
   mockedCredentialsQueries.useEducations.mockReset();
   mockedCredentialsQueries.useEducation.mockReset();
@@ -193,6 +204,10 @@ function resetApiMocks() {
   updateProject.mockReset();
   deleteProject.mockReset();
   uploadProjectImage.mockReset();
+  createProjectCaseStudy.mockReset();
+  updateProjectCaseStudy.mockReset();
+  updateProjectCaseStudyPublication.mockReset();
+  deleteProjectCaseStudy.mockReset();
   updatePortfolioSettings.mockReset();
   createEducation.mockReset();
   updateEducation.mockReset();
@@ -214,6 +229,7 @@ function resetApiMocks() {
   refetchPublicProfile.mockReset();
   refetchProjects.mockReset();
   refetchProject.mockReset();
+  refetchProjectCaseStudy.mockReset();
   refetchPublicProjects.mockReset();
   refetchPublicProject.mockReset();
   refetchPortfolioSettings.mockReset();
@@ -309,6 +325,27 @@ function project(overrides: Partial<Project> = {}): Project {
     liveUrl: 'https://example.com',
     imageUrl: 'https://example.com/image.png',
     imageKey: null,
+    isPublic: true,
+    createdAt: '2026-08-13T10:00:00.000Z',
+    updatedAt: '2026-08-14T10:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function caseStudy(
+  overrides: Partial<ProjectCaseStudy> = {},
+): ProjectCaseStudy {
+  return {
+    id: 'case-study-1',
+    projectId: 'project-1',
+    context: 'The portfolio needed deeper project proof.',
+    problem: 'Recruiters need to understand the technical tradeoffs.',
+    role: 'Full-stack developer',
+    approach: 'Built a dedicated case-study workflow.',
+    responsibilities: ['Designed the data model', 'Built the admin editor'],
+    technicalChallenges: ['Keeping drafts private'],
+    outcomes: ['Published a scannable case study'],
+    lessonsLearned: 'Structured content is easier to review.',
     isPublic: true,
     createdAt: '2026-08-13T10:00:00.000Z',
     updatedAt: '2026-08-14T10:00:00.000Z',
@@ -415,7 +452,10 @@ function publicResume(overrides: Partial<PublicResume> = {}): PublicResume {
   };
 }
 
-function mockProjectHooks(projects: Project[] = []) {
+function mockProjectHooks(
+  projects: Project[] = [],
+  caseStudies: Record<string, ProjectCaseStudy | null> = {},
+) {
   mockedProjectQueries.useProjects.mockReturnValue({
     data: projects,
     isLoading: false,
@@ -436,6 +476,19 @@ function mockProjectHooks(projects: Project[] = []) {
       refetch: refetchProject,
     } as unknown as ReturnType<typeof projectQueries.useProject>;
   });
+  mockedProjectQueries.useProjectCaseStudy.mockImplementation((id: string) => {
+    const value = Object.prototype.hasOwnProperty.call(caseStudies, id)
+      ? caseStudies[id]
+      : null;
+
+    return {
+      data: value,
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: refetchProjectCaseStudy,
+    } as unknown as ReturnType<typeof projectQueries.useProjectCaseStudy>;
+  });
   mockedProjectMutations.useCreateProjectMutation.mockReturnValue({
     mutateAsync: createProject,
     isPending: false,
@@ -453,6 +506,32 @@ function mockProjectHooks(projects: Project[] = []) {
     isPending: false,
   } as unknown as ReturnType<
     typeof projectMutations.useUploadProjectImageMutation
+  >);
+  mockedProjectMutations.useCreateProjectCaseStudyMutation.mockReturnValue({
+    mutateAsync: createProjectCaseStudy,
+    isPending: false,
+  } as unknown as ReturnType<
+    typeof projectMutations.useCreateProjectCaseStudyMutation
+  >);
+  mockedProjectMutations.useUpdateProjectCaseStudyMutation.mockReturnValue({
+    mutateAsync: updateProjectCaseStudy,
+    isPending: false,
+  } as unknown as ReturnType<
+    typeof projectMutations.useUpdateProjectCaseStudyMutation
+  >);
+  mockedProjectMutations.useUpdateProjectCaseStudyPublicationMutation.mockReturnValue(
+    {
+      mutateAsync: updateProjectCaseStudyPublication,
+      isPending: false,
+    } as unknown as ReturnType<
+      typeof projectMutations.useUpdateProjectCaseStudyPublicationMutation
+    >,
+  );
+  mockedProjectMutations.useDeleteProjectCaseStudyMutation.mockReturnValue({
+    mutateAsync: deleteProjectCaseStudy,
+    isPending: false,
+  } as unknown as ReturnType<
+    typeof projectMutations.useDeleteProjectCaseStudyMutation
   >);
 }
 
@@ -1578,6 +1657,47 @@ describe('public projects', () => {
     );
 
     expect(window.location.pathname).toBe('/projects');
+  });
+
+  it('renders published case studies and hides draft-only case-study content', () => {
+    const publicCaseStudy = caseStudy({
+      responsibilities: ['Owned the API design', 'Built the admin workflow'],
+      technicalChallenges: ['Prevented draft content leaks'],
+      outcomes: ['Improved recruiter scanning'],
+    });
+    mockPublicProjectHooks([project({ caseStudy: publicCaseStudy })]);
+
+    renderApp('/projects/portfolio-api');
+
+    expect(
+      screen.getByRole('heading', { name: 'How this project was built' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(publicCaseStudy.context)).toBeInTheDocument();
+    expect(screen.getByText(publicCaseStudy.problem)).toBeInTheDocument();
+    expect(screen.getByText('Owned the API design')).toBeInTheDocument();
+    expect(
+      screen.getByText('Prevented draft content leaks'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Improved recruiter scanning')).toBeInTheDocument();
+
+    mockPublicProjectHooks([
+      project({
+        slug: 'draft-case-study',
+        caseStudy: null,
+      }),
+    ]);
+    window.history.pushState({}, '', '/projects/draft-case-study');
+    cleanup();
+    render(<App />);
+
+    expect(
+      screen.queryByRole('heading', { name: 'How this project was built' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        'Recruiters need to understand the technical tradeoffs.',
+      ),
+    ).not.toBeInTheDocument();
   });
 
   it('omits optional public detail fields when URLs, image, and description are absent', () => {
@@ -2727,6 +2847,173 @@ describe('project form', () => {
       'A project with this slug already exists.',
     );
     expect(window.location.pathname).toBe('/admin/projects/project-1/edit');
+  });
+
+  it('creates, publishes, unpublishes, and removes project case studies from edit mode', async () => {
+    const existing = project();
+    mockProfileHooks();
+    mockProjectHooks([existing], { 'project-1': null });
+    createProjectCaseStudy.mockResolvedValue(
+      caseStudy({ isPublic: false, responsibilities: ['Built API'] }),
+    );
+    updateProjectCaseStudy.mockResolvedValue(
+      caseStudy({ isPublic: true, responsibilities: ['Built API'] }),
+    );
+    updateProjectCaseStudyPublication.mockResolvedValue(
+      caseStudy({ isPublic: false }),
+    );
+    deleteProjectCaseStudy.mockResolvedValue(caseStudy());
+
+    const view = renderApp('/admin/projects/project-1/edit');
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Start case study draft' }),
+    );
+
+    const caseStudySection = screen
+      .getByRole('heading', { name: 'Project case study' })
+      .closest('section');
+    expect(caseStudySection).not.toBeNull();
+    const editor = within(caseStudySection as HTMLElement);
+
+    fireEvent.change(editor.getByLabelText('Context'), {
+      target: { value: ' Portfolio context ' },
+    });
+    fireEvent.change(editor.getByLabelText('Problem'), {
+      target: { value: ' Recruiter problem ' },
+    });
+    fireEvent.change(editor.getByLabelText('Role'), {
+      target: { value: ' Full-stack developer ' },
+    });
+    fireEvent.change(editor.getByLabelText('Approach'), {
+      target: { value: ' Build the workflow ' },
+    });
+    fireEvent.click(
+      editor.getByRole('button', { name: 'Add responsibilities entry' }),
+    );
+    fireEvent.change(
+      editor.getAllByRole('textbox', { name: /^Responsibilities entry/ })[0],
+      {
+        target: { value: ' Built API ' },
+      },
+    );
+    fireEvent.click(
+      editor.getByRole('button', { name: 'Add responsibilities entry' }),
+    );
+    fireEvent.change(
+      editor.getAllByRole('textbox', { name: /^Responsibilities entry/ })[1],
+      {
+        target: { value: ' Wrote tests ' },
+      },
+    );
+    fireEvent.click(
+      editor.getByRole('button', {
+        name: 'Move Responsibilities entry 2 up',
+      }),
+    );
+    fireEvent.click(editor.getByRole('button', { name: 'Save draft' }));
+
+    await waitFor(() =>
+      expect(createProjectCaseStudy).toHaveBeenCalledWith({
+        projectId: 'project-1',
+        input: expect.objectContaining({
+          context: 'Portfolio context',
+          problem: 'Recruiter problem',
+          role: 'Full-stack developer',
+          approach: 'Build the workflow',
+          responsibilities: ['Wrote tests', 'Built API'],
+          isPublic: false,
+        }),
+      }),
+    );
+
+    mockProjectHooks([existing], {
+      'project-1': caseStudy({
+        isPublic: false,
+        technicalChallenges: [],
+        outcomes: [],
+      }),
+    });
+    view.rerender(<App />);
+
+    const updatedSection = screen
+      .getByRole('heading', { name: 'Project case study' })
+      .closest('section');
+    const updatedEditor = within(updatedSection as HTMLElement);
+
+    fireEvent.click(updatedEditor.getByRole('button', { name: 'Publish' }));
+    expect(await screen.findByRole('dialog')).toHaveTextContent(
+      'Publish incomplete case study?',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Publish anyway' }));
+
+    await waitFor(() =>
+      expect(updateProjectCaseStudy).toHaveBeenCalledWith({
+        projectId: 'project-1',
+        input: expect.objectContaining({ isPublic: true }),
+      }),
+    );
+
+    mockProjectHooks([existing], {
+      'project-1': caseStudy({ isPublic: true }),
+    });
+    view.rerender(<App />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Unpublish' }));
+    await waitFor(() =>
+      expect(updateProjectCaseStudyPublication).toHaveBeenCalledWith({
+        projectId: 'project-1',
+        input: { isPublic: false },
+      }),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove case study' }));
+    expect(screen.getByRole('dialog')).toHaveTextContent(
+      'Remove case study for Portfolio API?',
+    );
+    fireEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', {
+        name: 'Remove',
+      }),
+    );
+
+    await waitFor(() =>
+      expect(deleteProjectCaseStudy).toHaveBeenCalledWith('project-1'),
+    );
+  });
+
+  it('preserves case-study form input when API save fails', async () => {
+    const existing = project();
+    mockProfileHooks();
+    mockProjectHooks([existing], { 'project-1': null });
+    createProjectCaseStudy.mockRejectedValue(new Error('case study failed'));
+
+    renderApp('/admin/projects/project-1/edit');
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Start case study draft' }),
+    );
+    fireEvent.change(screen.getByLabelText('Context'), {
+      target: { value: 'Kept context' },
+    });
+    fireEvent.change(screen.getByLabelText('Problem'), {
+      target: { value: 'Kept problem' },
+    });
+    fireEvent.change(screen.getByLabelText('Role'), {
+      target: { value: 'Kept role' },
+    });
+    fireEvent.change(screen.getByLabelText('Approach'), {
+      target: { value: 'Kept approach' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'case study failed',
+    );
+    expect(screen.getByLabelText('Context')).toHaveValue('Kept context');
+    expect(screen.getByLabelText('Problem')).toHaveValue('Kept problem');
+    expect(screen.getByLabelText('Role')).toHaveValue('Kept role');
+    expect(screen.getByLabelText('Approach')).toHaveValue('Kept approach');
   });
 
   it('shows edit loading state and submits updates successfully', async () => {

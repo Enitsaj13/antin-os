@@ -1,6 +1,8 @@
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
+  ArrowDown,
+  ArrowUp,
   Check,
   Edit3,
   ImagePlus,
@@ -15,14 +17,27 @@ import {
   PROJECT_IMAGE_MIME_TYPES,
   slugify,
 } from '@antin-os/shared';
-import type { CreateProjectInput, Project } from '@antin-os/shared';
+import type {
+  CreateProjectCaseStudyInput,
+  CreateProjectInput,
+  Project,
+  ProjectCaseStudy,
+} from '@antin-os/shared';
 import {
+  useCreateProjectCaseStudyMutation,
   useCreateProjectMutation,
+  useDeleteProjectCaseStudyMutation,
   useDeleteProjectMutation,
+  useUpdateProjectCaseStudyMutation,
+  useUpdateProjectCaseStudyPublicationMutation,
   useUpdateProjectMutation,
   useUploadProjectImageMutation,
 } from './mutations/project.mutations';
-import { useProject, useProjects } from './queries/project.queries';
+import {
+  useProject,
+  useProjectCaseStudy,
+  useProjects,
+} from './queries/project.queries';
 
 type Navigate = (path: string) => void;
 type ProjectFilter = 'all' | 'public' | 'unpublished';
@@ -39,8 +54,21 @@ type ProjectFormValues = {
   imageKey: string;
   isPublic: boolean;
 };
+type CaseStudyFormValues = {
+  context: string;
+  problem: string;
+  role: string;
+  approach: string;
+  responsibilities: string[];
+  technicalChallenges: string[];
+  outcomes: string[];
+  lessonsLearned: string;
+};
 
 type FormErrors = Partial<Record<keyof ProjectFormValues | 'form', string>>;
+type CaseStudyFormErrors = Partial<
+  Record<keyof CaseStudyFormValues | 'form', string>
+>;
 
 const PANEL_CLASS = 'border border-slate-300 bg-white p-5';
 const BUTTON_CLASS =
@@ -64,6 +92,17 @@ const EMPTY_PROJECT: ProjectFormValues = {
   imageUrl: '',
   imageKey: '',
   isPublic: false,
+};
+
+const EMPTY_CASE_STUDY: CaseStudyFormValues = {
+  context: '',
+  problem: '',
+  role: '',
+  approach: '',
+  responsibilities: [],
+  technicalChallenges: [],
+  outcomes: [],
+  lessonsLearned: '',
 };
 
 const PROJECT_IMAGE_ACCEPT = PROJECT_IMAGE_MIME_TYPES.join(',');
@@ -151,6 +190,19 @@ function projectToForm(project: Project): ProjectFormValues {
   };
 }
 
+function caseStudyToForm(caseStudy: ProjectCaseStudy): CaseStudyFormValues {
+  return {
+    context: caseStudy.context,
+    problem: caseStudy.problem,
+    role: caseStudy.role,
+    approach: caseStudy.approach,
+    responsibilities: caseStudy.responsibilities,
+    technicalChallenges: caseStudy.technicalChallenges,
+    outcomes: caseStudy.outcomes,
+    lessonsLearned: caseStudy.lessonsLearned ?? '',
+  };
+}
+
 function toProjectInput(values: ProjectFormValues): CreateProjectInput {
   return {
     title: values.title.trim(),
@@ -163,6 +215,27 @@ function toProjectInput(values: ProjectFormValues): CreateProjectInput {
     imageUrl: values.imageKey ? null : optionalUrl(values.imageUrl),
     imageKey: values.imageKey.trim() || null,
     isPublic: values.isPublic,
+  };
+}
+
+function cleanEntries(entries: string[]) {
+  return entries.map((entry) => entry.trim()).filter(Boolean);
+}
+
+function toCaseStudyInput(
+  values: CaseStudyFormValues,
+  isPublic: boolean,
+): CreateProjectCaseStudyInput {
+  return {
+    context: values.context.trim(),
+    problem: values.problem.trim(),
+    role: values.role.trim(),
+    approach: values.approach.trim(),
+    responsibilities: cleanEntries(values.responsibilities),
+    technicalChallenges: cleanEntries(values.technicalChallenges),
+    outcomes: cleanEntries(values.outcomes),
+    lessonsLearned: values.lessonsLearned.trim() || null,
+    isPublic,
   };
 }
 
@@ -205,6 +278,30 @@ function validateProjectForm(values: ProjectFormValues): FormErrors {
   return errors;
 }
 
+function validateCaseStudyForm(
+  values: CaseStudyFormValues,
+): CaseStudyFormErrors {
+  const errors: CaseStudyFormErrors = {};
+
+  for (const key of ['context', 'problem', 'role', 'approach'] as const) {
+    if (!values[key].trim()) {
+      errors[key] = 'This field is required.';
+    }
+  }
+
+  for (const key of [
+    'responsibilities',
+    'technicalChallenges',
+    'outcomes',
+  ] as const) {
+    if (values[key].some((entry) => !entry.trim())) {
+      errors[key] = 'Remove empty entries before saving.';
+    }
+  }
+
+  return errors;
+}
+
 function hasIncompletePublicInfo(values: ProjectFormValues) {
   return (
     values.isPublic &&
@@ -212,6 +309,15 @@ function hasIncompletePublicInfo(values: ProjectFormValues) {
       !values.repoUrl.trim() ||
       !values.liveUrl.trim() ||
       (!values.imageUrl.trim() && !values.imageKey.trim()))
+  );
+}
+
+function hasIncompleteCaseStudy(values: CaseStudyFormValues) {
+  return (
+    values.responsibilities.length === 0 ||
+    values.technicalChallenges.length === 0 ||
+    values.outcomes.length === 0 ||
+    !values.lessonsLearned.trim()
   );
 }
 
@@ -228,6 +334,132 @@ function ErrorText({ id, message }: { id: string; message?: string }) {
     <p className="m-0 text-sm text-red-700" id={id}>
       {message}
     </p>
+  );
+}
+
+function CaseStudyStatus({
+  caseStudy,
+}: {
+  caseStudy: ProjectCaseStudy | null;
+}) {
+  if (!caseStudy) {
+    return <span>No case study</span>;
+  }
+
+  return (
+    <span>
+      {caseStudy.isPublic ? 'Published case study' : 'Draft case study'}
+    </span>
+  );
+}
+
+function RepeatableTextEntries({
+  id,
+  label,
+  values,
+  error,
+  disabled,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  values: string[];
+  error?: string;
+  disabled: boolean;
+  onChange: (values: string[]) => void;
+}) {
+  function updateEntry(index: number, value: string) {
+    onChange(
+      values.map((entry, entryIndex) => (entryIndex === index ? value : entry)),
+    );
+  }
+
+  function removeEntry(index: number) {
+    onChange(values.filter((_, entryIndex) => entryIndex !== index));
+  }
+
+  function moveEntry(index: number, direction: -1 | 1) {
+    const targetIndex = index + direction;
+
+    if (targetIndex < 0 || targetIndex >= values.length) {
+      return;
+    }
+
+    const nextValues = [...values];
+    const [entry] = nextValues.splice(index, 1);
+    nextValues.splice(targetIndex, 0, entry);
+    onChange(nextValues);
+  }
+
+  return (
+    <fieldset className="grid gap-2 border border-slate-300 p-3">
+      <legend className="px-1 font-medium">{label}</legend>
+      {values.length > 0 ? (
+        <div className="grid gap-2">
+          {values.map((value, index) => (
+            <div
+              className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto]"
+              key={`${id}-${index}`}
+            >
+              <label className="sr-only" htmlFor={`${id}-${index}`}>
+                {label} entry {index + 1}
+              </label>
+              <textarea
+                id={`${id}-${index}`}
+                className={`${INPUT_CLASS} min-h-20 resize-y`}
+                value={value}
+                disabled={disabled}
+                onChange={(event) => updateEntry(index, event.target.value)}
+              />
+              <div className="flex flex-wrap gap-2 md:justify-end">
+                <button
+                  className={BUTTON_CLASS}
+                  type="button"
+                  disabled={disabled || index === 0}
+                  aria-label={`Move ${label} entry ${index + 1} up`}
+                  onClick={() => moveEntry(index, -1)}
+                >
+                  <ArrowUp size={16} aria-hidden="true" />
+                  Up
+                </button>
+                <button
+                  className={BUTTON_CLASS}
+                  type="button"
+                  disabled={disabled || index === values.length - 1}
+                  aria-label={`Move ${label} entry ${index + 1} down`}
+                  onClick={() => moveEntry(index, 1)}
+                >
+                  <ArrowDown size={16} aria-hidden="true" />
+                  Down
+                </button>
+                <button
+                  className={DANGER_BUTTON_CLASS}
+                  type="button"
+                  disabled={disabled}
+                  aria-label={`Remove ${label} entry ${index + 1}`}
+                  onClick={() => removeEntry(index)}
+                >
+                  <Trash2 size={16} aria-hidden="true" />
+                  Remove
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="m-0 text-sm text-slate-600">No entries yet.</p>
+      )}
+      <button
+        className={BUTTON_CLASS}
+        type="button"
+        disabled={disabled}
+        onClick={() => onChange([...values, ''])}
+      >
+        <Plus size={18} aria-hidden="true" />
+        Add {label.toLowerCase()} entry
+      </button>
+      <ErrorText id={`${id}-error`} message={error} />
+    </fieldset>
   );
 }
 
@@ -499,6 +731,479 @@ export function ProjectsAdmin({ onNavigate }: { onNavigate: Navigate }) {
   );
 }
 
+function CaseStudySection({
+  projectId,
+  projectTitle,
+}: {
+  projectId: string;
+  projectTitle: string;
+}) {
+  const caseStudyQuery = useProjectCaseStudy(projectId);
+  const createCaseStudyMutation = useCreateProjectCaseStudyMutation();
+  const updateCaseStudyMutation = useUpdateProjectCaseStudyMutation();
+  const updatePublicationMutation =
+    useUpdateProjectCaseStudyPublicationMutation();
+  const deleteCaseStudyMutation = useDeleteProjectCaseStudyMutation();
+  const caseStudy = caseStudyQuery.data ?? null;
+  const [hasStartedDraft, setHasStartedDraft] = useState(false);
+  const [form, setForm] = useState<CaseStudyFormValues>(EMPTY_CASE_STUDY);
+  const [errors, setErrors] = useState<CaseStudyFormErrors>({});
+  const [status, setStatus] = useState('');
+  const [showPublishWarning, setShowPublishWarning] = useState(false);
+  const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
+
+  useEffect(() => {
+    if (caseStudyQuery.data) {
+      setForm(caseStudyToForm(caseStudyQuery.data));
+      setHasStartedDraft(true);
+      setErrors({});
+    }
+
+    if (caseStudyQuery.data === null && !hasStartedDraft) {
+      setForm(EMPTY_CASE_STUDY);
+    }
+  }, [caseStudyQuery.data, hasStartedDraft]);
+
+  const isPending =
+    createCaseStudyMutation.isPending ||
+    updateCaseStudyMutation.isPending ||
+    updatePublicationMutation.isPending ||
+    deleteCaseStudyMutation.isPending;
+
+  function updateField<K extends keyof CaseStudyFormValues>(
+    key: K,
+    value: CaseStudyFormValues[K],
+  ) {
+    setErrors((current) => ({ ...current, [key]: undefined, form: undefined }));
+    setStatus('');
+    setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  async function saveCaseStudy(isPublic: boolean) {
+    const nextErrors = validateCaseStudyForm(form);
+    setErrors(nextErrors);
+
+    if (Object.keys(nextErrors).length > 0) {
+      return;
+    }
+
+    const input = toCaseStudyInput(form, isPublic);
+
+    try {
+      if (caseStudy) {
+        await updateCaseStudyMutation.mutateAsync({ projectId, input });
+      } else {
+        await createCaseStudyMutation.mutateAsync({ projectId, input });
+      }
+
+      setStatus(isPublic ? 'Case study published.' : 'Case study draft saved.');
+      setShowPublishWarning(false);
+      setHasStartedDraft(true);
+    } catch (error) {
+      setErrors({
+        form: errorMessage(error, 'Case study save failed.'),
+      });
+    }
+  }
+
+  function publishCaseStudy(skipWarning = false) {
+    const nextErrors = validateCaseStudyForm(form);
+    setErrors(nextErrors);
+
+    if (Object.keys(nextErrors).length > 0) {
+      return;
+    }
+
+    if (!skipWarning && hasIncompleteCaseStudy(form)) {
+      setShowPublishWarning(true);
+      return;
+    }
+
+    void saveCaseStudy(true);
+  }
+
+  async function unpublishCaseStudy() {
+    if (!caseStudy || isPending) {
+      return;
+    }
+
+    setErrors({});
+    setStatus('');
+
+    try {
+      await updatePublicationMutation.mutateAsync({
+        projectId,
+        input: { isPublic: false },
+      });
+      setStatus('Case study unpublished.');
+    } catch (error) {
+      setErrors({
+        form: errorMessage(error, 'Case study unpublish failed.'),
+      });
+    }
+  }
+
+  async function removeCaseStudy() {
+    if (!caseStudy || isPending) {
+      return;
+    }
+
+    setErrors({});
+    setStatus('');
+
+    try {
+      await deleteCaseStudyMutation.mutateAsync(projectId);
+      setShowRemoveConfirm(false);
+      setHasStartedDraft(false);
+      setForm(EMPTY_CASE_STUDY);
+      setStatus('Case study removed.');
+    } catch (error) {
+      setErrors({
+        form: errorMessage(error, 'Case study removal failed.'),
+      });
+    }
+  }
+
+  const showForm = hasStartedDraft || Boolean(caseStudy);
+
+  return (
+    <section className={PANEL_CLASS} aria-labelledby="case-study-heading">
+      <header className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <p className="m-0 text-sm font-semibold uppercase tracking-wide text-teal-700">
+            Case study
+          </p>
+          <h2
+            className="m-0 text-[24px] font-semibold text-slate-950"
+            id="case-study-heading"
+          >
+            Project case study
+          </h2>
+          <p className="m-0 text-slate-600">
+            Explain the problem, contribution, technical decisions, challenges,
+            outcomes, and lessons learned.
+          </p>
+        </div>
+        <p className="m-0 border border-slate-300 bg-slate-50 px-3 py-2 text-sm">
+          <CaseStudyStatus caseStudy={caseStudy} />
+        </p>
+      </header>
+
+      {caseStudyQuery.isLoading ? (
+        <p role="status">Loading case study</p>
+      ) : null}
+
+      {caseStudyQuery.isError ? (
+        <div
+          className="grid gap-3 border border-red-300 bg-red-50 p-4"
+          role="alert"
+        >
+          <p className="m-0">
+            {errorMessage(caseStudyQuery.error, 'Could not load case study.')}
+          </p>
+          <button
+            className={BUTTON_CLASS}
+            type="button"
+            onClick={() => void caseStudyQuery.refetch()}
+          >
+            <RotateCcw size={18} aria-hidden="true" />
+            Retry case study
+          </button>
+        </div>
+      ) : null}
+
+      {!caseStudyQuery.isLoading && !caseStudyQuery.isError && !showForm ? (
+        <div className="grid gap-3 border border-slate-300 bg-slate-50 p-4">
+          <p className="m-0">This project does not have a case study yet.</p>
+          <button
+            className={PRIMARY_BUTTON_CLASS}
+            type="button"
+            onClick={() => {
+              setHasStartedDraft(true);
+              setStatus('');
+              setErrors({});
+            }}
+          >
+            <Plus size={18} aria-hidden="true" />
+            Start case study draft
+          </button>
+        </div>
+      ) : null}
+
+      {status ? (
+        <p
+          className="m-0 mb-4 border border-teal-300 bg-teal-50 p-3 text-teal-900"
+          role="status"
+        >
+          {status}
+        </p>
+      ) : null}
+
+      {errors.form ? (
+        <p
+          className="m-0 mb-4 border border-red-300 bg-red-50 p-3 text-red-700"
+          role="alert"
+        >
+          {errors.form}
+        </p>
+      ) : null}
+
+      {showForm ? (
+        <div className="grid gap-4">
+          <div className={FIELD_CLASS}>
+            <label htmlFor="case-study-context">Context</label>
+            <textarea
+              id="case-study-context"
+              className={`${INPUT_CLASS} min-h-24 resize-y`}
+              aria-invalid={Boolean(errors.context)}
+              aria-describedby={
+                errors.context ? 'case-study-context-error' : undefined
+              }
+              disabled={isPending}
+              value={form.context}
+              onChange={(event) => updateField('context', event.target.value)}
+            />
+            <ErrorText id="case-study-context-error" message={errors.context} />
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className={FIELD_CLASS}>
+              <label htmlFor="case-study-problem">Problem</label>
+              <textarea
+                id="case-study-problem"
+                className={`${INPUT_CLASS} min-h-28 resize-y`}
+                aria-invalid={Boolean(errors.problem)}
+                aria-describedby={
+                  errors.problem ? 'case-study-problem-error' : undefined
+                }
+                disabled={isPending}
+                value={form.problem}
+                onChange={(event) => updateField('problem', event.target.value)}
+              />
+              <ErrorText
+                id="case-study-problem-error"
+                message={errors.problem}
+              />
+            </div>
+
+            <div className={FIELD_CLASS}>
+              <label htmlFor="case-study-role">Role</label>
+              <textarea
+                id="case-study-role"
+                className={`${INPUT_CLASS} min-h-28 resize-y`}
+                aria-invalid={Boolean(errors.role)}
+                aria-describedby={
+                  errors.role ? 'case-study-role-error' : undefined
+                }
+                disabled={isPending}
+                value={form.role}
+                onChange={(event) => updateField('role', event.target.value)}
+              />
+              <ErrorText id="case-study-role-error" message={errors.role} />
+            </div>
+          </div>
+
+          <div className={FIELD_CLASS}>
+            <label htmlFor="case-study-approach">Approach</label>
+            <textarea
+              id="case-study-approach"
+              className={`${INPUT_CLASS} min-h-28 resize-y`}
+              aria-invalid={Boolean(errors.approach)}
+              aria-describedby={
+                errors.approach ? 'case-study-approach-error' : undefined
+              }
+              disabled={isPending}
+              value={form.approach}
+              onChange={(event) => updateField('approach', event.target.value)}
+            />
+            <ErrorText
+              id="case-study-approach-error"
+              message={errors.approach}
+            />
+          </div>
+
+          <RepeatableTextEntries
+            id="case-study-responsibilities"
+            label="Responsibilities"
+            values={form.responsibilities}
+            error={errors.responsibilities}
+            disabled={isPending}
+            onChange={(values) => updateField('responsibilities', values)}
+          />
+
+          <RepeatableTextEntries
+            id="case-study-challenges"
+            label="Challenges"
+            values={form.technicalChallenges}
+            error={errors.technicalChallenges}
+            disabled={isPending}
+            onChange={(values) => updateField('technicalChallenges', values)}
+          />
+
+          <RepeatableTextEntries
+            id="case-study-outcomes"
+            label="Outcomes"
+            values={form.outcomes}
+            error={errors.outcomes}
+            disabled={isPending}
+            onChange={(values) => updateField('outcomes', values)}
+          />
+
+          <div className={FIELD_CLASS}>
+            <label htmlFor="case-study-lessons">Lessons learned</label>
+            <textarea
+              id="case-study-lessons"
+              className={`${INPUT_CLASS} min-h-28 resize-y`}
+              disabled={isPending}
+              value={form.lessonsLearned}
+              onChange={(event) =>
+                updateField('lessonsLearned', event.target.value)
+              }
+            />
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              className={BUTTON_CLASS}
+              type="button"
+              disabled={isPending}
+              onClick={() => void saveCaseStudy(false)}
+            >
+              <Save size={18} aria-hidden="true" />
+              {isPending ? 'Saving' : 'Save draft'}
+            </button>
+            <button
+              className={PRIMARY_BUTTON_CLASS}
+              type="button"
+              disabled={isPending}
+              onClick={() => publishCaseStudy()}
+            >
+              <Check size={18} aria-hidden="true" />
+              Publish
+            </button>
+            {caseStudy?.isPublic ? (
+              <button
+                className={BUTTON_CLASS}
+                type="button"
+                disabled={isPending}
+                onClick={() => void unpublishCaseStudy()}
+              >
+                <X size={18} aria-hidden="true" />
+                Unpublish
+              </button>
+            ) : null}
+            {caseStudy ? (
+              <button
+                className={DANGER_BUTTON_CLASS}
+                type="button"
+                disabled={isPending}
+                onClick={() => setShowRemoveConfirm(true)}
+              >
+                <Trash2 size={18} aria-hidden="true" />
+                Remove case study
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {showPublishWarning ? (
+        <div
+          className="fixed inset-0 grid place-items-center bg-slate-950/65 p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="case-study-publish-warning-title"
+        >
+          <div className="grid max-w-md gap-4 border border-slate-300 bg-white p-5">
+            <div className="flex items-start gap-3">
+              <AlertTriangle
+                className="mt-1 text-amber-700"
+                aria-hidden="true"
+              />
+              <div>
+                <h2
+                  className="m-0 text-xl font-semibold"
+                  id="case-study-publish-warning-title"
+                >
+                  Publish incomplete case study?
+                </h2>
+                <p className="m-0 mt-2 text-slate-700">
+                  Responsibilities, challenges, outcomes, or lessons learned are
+                  empty. You can publish anyway after confirming.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap justify-end gap-2">
+              <button
+                className={BUTTON_CLASS}
+                type="button"
+                onClick={() => setShowPublishWarning(false)}
+              >
+                Keep editing
+              </button>
+              <button
+                className={PRIMARY_BUTTON_CLASS}
+                type="button"
+                disabled={isPending}
+                onClick={() => publishCaseStudy(true)}
+              >
+                <Check size={18} aria-hidden="true" />
+                Publish anyway
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showRemoveConfirm && caseStudy ? (
+        <div
+          className="fixed inset-0 grid place-items-center bg-slate-950/65 p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="remove-case-study-title"
+        >
+          <div className="grid max-w-md gap-4 border border-slate-300 bg-white p-5">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-1 text-red-700" aria-hidden="true" />
+              <div>
+                <h2
+                  className="m-0 text-xl font-semibold"
+                  id="remove-case-study-title"
+                >
+                  Remove case study for {projectTitle}?
+                </h2>
+                <p className="m-0 mt-2 text-slate-700">
+                  This case study will be permanently deleted.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap justify-end gap-2">
+              <button
+                className={BUTTON_CLASS}
+                type="button"
+                disabled={isPending}
+                onClick={() => setShowRemoveConfirm(false)}
+              >
+                <X size={18} aria-hidden="true" />
+                Cancel
+              </button>
+              <button
+                className={DANGER_BUTTON_CLASS}
+                type="button"
+                disabled={isPending}
+                onClick={() => void removeCaseStudy()}
+              >
+                <Trash2 size={18} aria-hidden="true" />
+                Remove
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 export function ProjectFormPage({
   mode,
   projectId,
@@ -705,280 +1410,298 @@ export function ProjectFormPage({
   }
 
   return (
-    <section className={PANEL_CLASS} aria-label="Project form">
-      <form className="grid gap-4" onSubmit={onSubmit}>
-        <header className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h2 className="m-0 text-[24px] font-semibold text-slate-950">
-              {isEdit ? 'Edit project' : 'New project'}
-            </h2>
-            <p className="m-0 text-slate-600">
-              {isEdit
-                ? 'Update project details and publication state.'
-                : 'Create a private project draft by default.'}
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              className={BUTTON_CLASS}
-              type="button"
-              disabled={isPending}
-              onClick={() => onNavigate('/admin/projects')}
-            >
-              <X size={18} aria-hidden="true" />
-              Cancel
-            </button>
-            <button
-              className={PRIMARY_BUTTON_CLASS}
-              type="submit"
-              disabled={isPending}
-            >
-              <Save size={18} aria-hidden="true" />
-              {isPending ? 'Saving' : 'Save'}
-            </button>
-          </div>
-        </header>
-
-        {errors.form ? (
-          <p
-            className="m-0 border border-red-300 bg-red-50 p-3 text-red-700"
-            role="alert"
-          >
-            {errors.form}
-          </p>
-        ) : null}
-
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className={FIELD_CLASS}>
-            <label htmlFor="project-title">Title</label>
-            <input
-              id="project-title"
-              className={INPUT_CLASS}
-              aria-invalid={Boolean(errors.title)}
-              aria-describedby={
-                errors.title ? 'project-title-error' : undefined
-              }
-              value={form.title}
-              onChange={(event) => updateField('title', event.target.value)}
-            />
-            <ErrorText id="project-title-error" message={errors.title} />
-          </div>
-
-          <div className={FIELD_CLASS}>
-            <label htmlFor="project-slug">Slug</label>
-            <input
-              id="project-slug"
-              className={INPUT_CLASS}
-              aria-invalid={Boolean(errors.slug)}
-              aria-describedby={errors.slug ? 'project-slug-error' : undefined}
-              value={form.slug}
-              onChange={(event) => updateField('slug', event.target.value)}
-            />
-            <ErrorText id="project-slug-error" message={errors.slug} />
-          </div>
-        </div>
-
-        <div className={FIELD_CLASS}>
-          <label htmlFor="project-summary">Summary</label>
-          <textarea
-            id="project-summary"
-            className={`${INPUT_CLASS} min-h-24 resize-y`}
-            aria-invalid={Boolean(errors.summary)}
-            aria-describedby={
-              errors.summary ? 'project-summary-error' : undefined
-            }
-            value={form.summary}
-            onChange={(event) => updateField('summary', event.target.value)}
-          />
-          <ErrorText id="project-summary-error" message={errors.summary} />
-        </div>
-
-        <div className={FIELD_CLASS}>
-          <label htmlFor="project-description">Description</label>
-          <textarea
-            id="project-description"
-            className={`${INPUT_CLASS} min-h-32 resize-y`}
-            value={form.description}
-            onChange={(event) => updateField('description', event.target.value)}
-          />
-        </div>
-
-        <div className={FIELD_CLASS}>
-          <label htmlFor="project-tech-stack">Tech stack</label>
-          <input
-            id="project-tech-stack"
-            className={INPUT_CLASS}
-            aria-invalid={Boolean(errors.techStack)}
-            aria-describedby={
-              errors.techStack ? 'project-tech-stack-error' : undefined
-            }
-            value={form.techStack}
-            onChange={(event) => updateField('techStack', event.target.value)}
-          />
-          <span className="text-sm text-slate-600">
-            Separate technologies with commas.
-          </span>
-          <ErrorText id="project-tech-stack-error" message={errors.techStack} />
-        </div>
-
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className={FIELD_CLASS}>
-            <label htmlFor="project-repo-url">Repository URL</label>
-            <input
-              id="project-repo-url"
-              className={INPUT_CLASS}
-              aria-invalid={Boolean(errors.repoUrl)}
-              aria-describedby={
-                errors.repoUrl ? 'project-repo-url-error' : undefined
-              }
-              value={form.repoUrl}
-              onChange={(event) => updateField('repoUrl', event.target.value)}
-            />
-            <ErrorText id="project-repo-url-error" message={errors.repoUrl} />
-          </div>
-
-          <div className={FIELD_CLASS}>
-            <label htmlFor="project-live-url">Live URL</label>
-            <input
-              id="project-live-url"
-              className={INPUT_CLASS}
-              aria-invalid={Boolean(errors.liveUrl)}
-              aria-describedby={
-                errors.liveUrl ? 'project-live-url-error' : undefined
-              }
-              value={form.liveUrl}
-              onChange={(event) => updateField('liveUrl', event.target.value)}
-            />
-            <ErrorText id="project-live-url-error" message={errors.liveUrl} />
-          </div>
-        </div>
-
-        <div className={FIELD_CLASS}>
-          <label htmlFor="project-image-file">Project image</label>
-          <div className="grid gap-3 border border-slate-300 p-3 md:grid-cols-[180px_1fr] md:items-center">
-            <div className="grid aspect-video place-items-center overflow-hidden border border-slate-300 bg-slate-100">
-              {form.imageUrl ? (
-                <img
-                  className="h-full w-full object-cover"
-                  src={form.imageUrl}
-                  alt={`${form.title || 'Project'} preview`}
-                />
-              ) : (
-                <span className="text-sm text-slate-600">No image</span>
-              )}
-            </div>
-            <div className="grid gap-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <label className={BUTTON_CLASS} htmlFor="project-image-file">
-                  <ImagePlus size={18} aria-hidden="true" />
-                  Upload image
-                </label>
-                {form.imageUrl ? (
-                  <button
-                    className={BUTTON_CLASS}
-                    type="button"
-                    disabled={isPending}
-                    onClick={removeProjectImage}
-                  >
-                    <X size={18} aria-hidden="true" />
-                    Remove image
-                  </button>
-                ) : null}
-              </div>
-              <input
-                id="project-image-file"
-                className="sr-only"
-                type="file"
-                accept={PROJECT_IMAGE_ACCEPT}
-                aria-invalid={Boolean(errors.imageUrl)}
-                aria-describedby={
-                  errors.imageUrl ? 'project-image-url-error' : undefined
-                }
-                disabled={isPending}
-                onChange={onProjectImageChange}
-              />
-              <p className="m-0 text-sm text-slate-600">
-                Upload JPEG, PNG, or WebP up to{' '}
-                {formatFileSize(PROJECT_IMAGE_MAX_BYTES)}.
+    <div className="grid gap-5">
+      <section className={PANEL_CLASS} aria-label="Project form">
+        <form className="grid gap-4" onSubmit={onSubmit}>
+          <header className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="m-0 text-[24px] font-semibold text-slate-950">
+                {isEdit ? 'Edit project' : 'New project'}
+              </h2>
+              <p className="m-0 text-slate-600">
+                {isEdit
+                  ? 'Update project details and publication state.'
+                  : 'Create a private project draft by default.'}
               </p>
-              {imageUploadProgress !== null ? (
-                <progress
-                  aria-label="Project image upload progress"
-                  className="h-2 w-full"
-                  max={100}
-                  value={imageUploadProgress}
-                />
-              ) : null}
-              {imageUploadStatus ? (
-                <p className="m-0 text-sm text-slate-700" role="status">
-                  {imageUploadStatus}
-                </p>
-              ) : null}
-              <ErrorText
-                id="project-image-url-error"
-                message={errors.imageUrl}
-              />
             </div>
-          </div>
-        </div>
-
-        <label className="flex max-w-max items-center gap-3 border border-slate-300 bg-slate-50 px-3 py-2">
-          <input
-            type="checkbox"
-            checked={form.isPublic}
-            onChange={(event) => updateField('isPublic', event.target.checked)}
-          />
-          <span>{form.isPublic ? 'Public' : 'Private'}</span>
-        </label>
-      </form>
-
-      {showPublishWarning ? (
-        <div
-          className="fixed inset-0 grid place-items-center bg-slate-950/65 p-6"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="publish-warning-title"
-        >
-          <div className="grid max-w-md gap-4 border border-slate-300 bg-white p-5">
-            <div className="flex items-start gap-3">
-              <AlertTriangle
-                className="mt-1 text-amber-700"
-                aria-hidden="true"
-              />
-              <div>
-                <h2
-                  className="m-0 text-xl font-semibold"
-                  id="publish-warning-title"
-                >
-                  Publish incomplete project?
-                </h2>
-                <p className="m-0 mt-2 text-slate-700">
-                  Description, repository URL, live URL, or project image is
-                  empty. You can publish anyway after confirming.
-                </p>
-              </div>
-            </div>
-            <div className="flex flex-wrap justify-end gap-2">
+            <div className="flex flex-wrap gap-2">
               <button
                 className={BUTTON_CLASS}
                 type="button"
-                onClick={() => setShowPublishWarning(false)}
+                disabled={isPending}
+                onClick={() => onNavigate('/admin/projects')}
               >
-                Keep editing
+                <X size={18} aria-hidden="true" />
+                Cancel
               </button>
               <button
                 className={PRIMARY_BUTTON_CLASS}
-                type="button"
+                type="submit"
                 disabled={isPending}
-                onClick={() => void submitProject(true)}
               >
-                <Check size={18} aria-hidden="true" />
-                Publish anyway
+                <Save size={18} aria-hidden="true" />
+                {isPending ? 'Saving' : 'Save'}
               </button>
             </div>
+          </header>
+
+          {errors.form ? (
+            <p
+              className="m-0 border border-red-300 bg-red-50 p-3 text-red-700"
+              role="alert"
+            >
+              {errors.form}
+            </p>
+          ) : null}
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className={FIELD_CLASS}>
+              <label htmlFor="project-title">Title</label>
+              <input
+                id="project-title"
+                className={INPUT_CLASS}
+                aria-invalid={Boolean(errors.title)}
+                aria-describedby={
+                  errors.title ? 'project-title-error' : undefined
+                }
+                value={form.title}
+                onChange={(event) => updateField('title', event.target.value)}
+              />
+              <ErrorText id="project-title-error" message={errors.title} />
+            </div>
+
+            <div className={FIELD_CLASS}>
+              <label htmlFor="project-slug">Slug</label>
+              <input
+                id="project-slug"
+                className={INPUT_CLASS}
+                aria-invalid={Boolean(errors.slug)}
+                aria-describedby={
+                  errors.slug ? 'project-slug-error' : undefined
+                }
+                value={form.slug}
+                onChange={(event) => updateField('slug', event.target.value)}
+              />
+              <ErrorText id="project-slug-error" message={errors.slug} />
+            </div>
           </div>
-        </div>
+
+          <div className={FIELD_CLASS}>
+            <label htmlFor="project-summary">Summary</label>
+            <textarea
+              id="project-summary"
+              className={`${INPUT_CLASS} min-h-24 resize-y`}
+              aria-invalid={Boolean(errors.summary)}
+              aria-describedby={
+                errors.summary ? 'project-summary-error' : undefined
+              }
+              value={form.summary}
+              onChange={(event) => updateField('summary', event.target.value)}
+            />
+            <ErrorText id="project-summary-error" message={errors.summary} />
+          </div>
+
+          <div className={FIELD_CLASS}>
+            <label htmlFor="project-description">Description</label>
+            <textarea
+              id="project-description"
+              className={`${INPUT_CLASS} min-h-32 resize-y`}
+              value={form.description}
+              onChange={(event) =>
+                updateField('description', event.target.value)
+              }
+            />
+          </div>
+
+          <div className={FIELD_CLASS}>
+            <label htmlFor="project-tech-stack">Tech stack</label>
+            <input
+              id="project-tech-stack"
+              className={INPUT_CLASS}
+              aria-invalid={Boolean(errors.techStack)}
+              aria-describedby={
+                errors.techStack ? 'project-tech-stack-error' : undefined
+              }
+              value={form.techStack}
+              onChange={(event) => updateField('techStack', event.target.value)}
+            />
+            <span className="text-sm text-slate-600">
+              Separate technologies with commas.
+            </span>
+            <ErrorText
+              id="project-tech-stack-error"
+              message={errors.techStack}
+            />
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className={FIELD_CLASS}>
+              <label htmlFor="project-repo-url">Repository URL</label>
+              <input
+                id="project-repo-url"
+                className={INPUT_CLASS}
+                aria-invalid={Boolean(errors.repoUrl)}
+                aria-describedby={
+                  errors.repoUrl ? 'project-repo-url-error' : undefined
+                }
+                value={form.repoUrl}
+                onChange={(event) => updateField('repoUrl', event.target.value)}
+              />
+              <ErrorText id="project-repo-url-error" message={errors.repoUrl} />
+            </div>
+
+            <div className={FIELD_CLASS}>
+              <label htmlFor="project-live-url">Live URL</label>
+              <input
+                id="project-live-url"
+                className={INPUT_CLASS}
+                aria-invalid={Boolean(errors.liveUrl)}
+                aria-describedby={
+                  errors.liveUrl ? 'project-live-url-error' : undefined
+                }
+                value={form.liveUrl}
+                onChange={(event) => updateField('liveUrl', event.target.value)}
+              />
+              <ErrorText id="project-live-url-error" message={errors.liveUrl} />
+            </div>
+          </div>
+
+          <div className={FIELD_CLASS}>
+            <label htmlFor="project-image-file">Project image</label>
+            <div className="grid gap-3 border border-slate-300 p-3 md:grid-cols-[180px_1fr] md:items-center">
+              <div className="grid aspect-video place-items-center overflow-hidden border border-slate-300 bg-slate-100">
+                {form.imageUrl ? (
+                  <img
+                    className="h-full w-full object-cover"
+                    src={form.imageUrl}
+                    alt={`${form.title || 'Project'} preview`}
+                  />
+                ) : (
+                  <span className="text-sm text-slate-600">No image</span>
+                )}
+              </div>
+              <div className="grid gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className={BUTTON_CLASS} htmlFor="project-image-file">
+                    <ImagePlus size={18} aria-hidden="true" />
+                    Upload image
+                  </label>
+                  {form.imageUrl ? (
+                    <button
+                      className={BUTTON_CLASS}
+                      type="button"
+                      disabled={isPending}
+                      onClick={removeProjectImage}
+                    >
+                      <X size={18} aria-hidden="true" />
+                      Remove image
+                    </button>
+                  ) : null}
+                </div>
+                <input
+                  id="project-image-file"
+                  className="sr-only"
+                  type="file"
+                  accept={PROJECT_IMAGE_ACCEPT}
+                  aria-invalid={Boolean(errors.imageUrl)}
+                  aria-describedby={
+                    errors.imageUrl ? 'project-image-url-error' : undefined
+                  }
+                  disabled={isPending}
+                  onChange={onProjectImageChange}
+                />
+                <p className="m-0 text-sm text-slate-600">
+                  Upload JPEG, PNG, or WebP up to{' '}
+                  {formatFileSize(PROJECT_IMAGE_MAX_BYTES)}.
+                </p>
+                {imageUploadProgress !== null ? (
+                  <progress
+                    aria-label="Project image upload progress"
+                    className="h-2 w-full"
+                    max={100}
+                    value={imageUploadProgress}
+                  />
+                ) : null}
+                {imageUploadStatus ? (
+                  <p className="m-0 text-sm text-slate-700" role="status">
+                    {imageUploadStatus}
+                  </p>
+                ) : null}
+                <ErrorText
+                  id="project-image-url-error"
+                  message={errors.imageUrl}
+                />
+              </div>
+            </div>
+          </div>
+
+          <label className="flex max-w-max items-center gap-3 border border-slate-300 bg-slate-50 px-3 py-2">
+            <input
+              type="checkbox"
+              checked={form.isPublic}
+              onChange={(event) =>
+                updateField('isPublic', event.target.checked)
+              }
+            />
+            <span>{form.isPublic ? 'Public' : 'Private'}</span>
+          </label>
+        </form>
+
+        {showPublishWarning ? (
+          <div
+            className="fixed inset-0 grid place-items-center bg-slate-950/65 p-6"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="publish-warning-title"
+          >
+            <div className="grid max-w-md gap-4 border border-slate-300 bg-white p-5">
+              <div className="flex items-start gap-3">
+                <AlertTriangle
+                  className="mt-1 text-amber-700"
+                  aria-hidden="true"
+                />
+                <div>
+                  <h2
+                    className="m-0 text-xl font-semibold"
+                    id="publish-warning-title"
+                  >
+                    Publish incomplete project?
+                  </h2>
+                  <p className="m-0 mt-2 text-slate-700">
+                    Description, repository URL, live URL, or project image is
+                    empty. You can publish anyway after confirming.
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap justify-end gap-2">
+                <button
+                  className={BUTTON_CLASS}
+                  type="button"
+                  onClick={() => setShowPublishWarning(false)}
+                >
+                  Keep editing
+                </button>
+                <button
+                  className={PRIMARY_BUTTON_CLASS}
+                  type="button"
+                  disabled={isPending}
+                  onClick={() => void submitProject(true)}
+                >
+                  <Check size={18} aria-hidden="true" />
+                  Publish anyway
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </section>
+
+      {isEdit && projectId && projectQuery.data ? (
+        <CaseStudySection
+          projectId={projectId}
+          projectTitle={projectQuery.data.title}
+        />
       ) : null}
-    </section>
+    </div>
   );
 }

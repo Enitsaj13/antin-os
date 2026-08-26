@@ -6,7 +6,7 @@ import { App } from 'supertest/types';
 import request from 'supertest';
 import { configureApp } from '@src/app.setup';
 import { createPasswordHash } from '@src/auth/password-hash';
-import { projectSelect } from './project-response';
+import { projectCaseStudySelect, projectSelect } from './project-response';
 import { ProjectsModule } from './projects.module';
 import {
   PROJECT_IMAGE_STORAGE,
@@ -18,6 +18,12 @@ type MockPrismaService = {
     create: jest.Mock;
     findMany: jest.Mock;
     findFirst: jest.Mock;
+    findUnique: jest.Mock;
+    update: jest.Mock;
+    delete: jest.Mock;
+  };
+  projectCaseStudy: {
+    create: jest.Mock;
     findUnique: jest.Mock;
     update: jest.Mock;
     delete: jest.Mock;
@@ -34,6 +40,12 @@ function createMockPrisma(): MockPrismaService {
       create: jest.fn(),
       findMany: jest.fn(),
       findFirst: jest.fn(),
+      findUnique: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+    },
+    projectCaseStudy: {
+      create: jest.fn(),
       findUnique: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
@@ -64,6 +76,25 @@ function project(overrides = {}) {
     imageUrl: 'https://antin.example.com/image.png',
     imageKey: null,
     isPublic: true,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  };
+}
+
+function caseStudy(overrides = {}) {
+  return {
+    id: 'case-study-1',
+    projectId: 'project-1',
+    context: 'Portfolio context',
+    problem: 'Recruiters need project depth.',
+    role: 'Full-stack developer',
+    approach: 'Built scoped admin and public APIs.',
+    responsibilities: ['Designed schema', 'Built UI'],
+    technicalChallenges: ['Preventing draft exposure'],
+    outcomes: ['Published a recruiter-friendly case study'],
+    lessonsLearned: 'Keep content structured.',
+    isPublic: false,
     createdAt: now,
     updatedAt: now,
     ...overrides,
@@ -131,10 +162,31 @@ describe('ProjectsController', () => {
         size: 1024,
       })
       .expect(401);
+    await request(app.getHttpServer())
+      .get('/projects/project-1/case-study')
+      .expect(401);
+    await request(app.getHttpServer())
+      .post('/projects/project-1/case-study')
+      .send({})
+      .expect(401);
+    await request(app.getHttpServer())
+      .patch('/projects/project-1/case-study')
+      .send({ context: 'Updated' })
+      .expect(401);
+    await request(app.getHttpServer())
+      .patch('/projects/project-1/case-study/publication')
+      .send({ isPublic: true })
+      .expect(401);
+    await request(app.getHttpServer())
+      .delete('/projects/project-1/case-study')
+      .expect(401);
 
     expect(prisma.project.create).not.toHaveBeenCalled();
     expect(prisma.project.update).not.toHaveBeenCalled();
     expect(prisma.project.delete).not.toHaveBeenCalled();
+    expect(prisma.projectCaseStudy.create).not.toHaveBeenCalled();
+    expect(prisma.projectCaseStudy.update).not.toHaveBeenCalled();
+    expect(prisma.projectCaseStudy.delete).not.toHaveBeenCalled();
     expect(storage.createUpload).not.toHaveBeenCalled();
   });
 
@@ -431,5 +483,215 @@ describe('ProjectsController', () => {
     await request(app.getHttpServer())
       .get('/public/projects/missing')
       .expect(404);
+  });
+
+  it('creates draft case studies with ordered repeatable fields', async () => {
+    prisma.project.findUnique.mockResolvedValue({ id: 'project-1' });
+    prisma.projectCaseStudy.create.mockResolvedValue(
+      caseStudy({
+        responsibilities: ['First', 'Second'],
+        technicalChallenges: ['Challenge A', 'Challenge B'],
+        outcomes: ['Outcome A', 'Outcome B'],
+      }),
+    );
+
+    const response = await owner
+      .post('/projects/project-1/case-study')
+      .send({
+        context: ' Context ',
+        problem: ' Problem ',
+        role: ' Role ',
+        approach: ' Approach ',
+        responsibilities: [' First ', ' Second '],
+        technicalChallenges: [' Challenge A ', ' Challenge B '],
+        outcomes: [' Outcome A ', ' Outcome B '],
+      })
+      .expect(201);
+
+    expect(response.body).toMatchObject({
+      projectId: 'project-1',
+      isPublic: false,
+      responsibilities: ['First', 'Second'],
+      technicalChallenges: ['Challenge A', 'Challenge B'],
+      outcomes: ['Outcome A', 'Outcome B'],
+    });
+    expect(prisma.projectCaseStudy.create).toHaveBeenCalledWith({
+      data: {
+        projectId: 'project-1',
+        context: 'Context',
+        problem: 'Problem',
+        role: 'Role',
+        approach: 'Approach',
+        responsibilities: ['First', 'Second'],
+        technicalChallenges: ['Challenge A', 'Challenge B'],
+        outcomes: ['Outcome A', 'Outcome B'],
+        lessonsLearned: null,
+        isPublic: false,
+      },
+      select: projectCaseStudySelect,
+    });
+  });
+
+  it('reads, edits, publishes, unpublishes, and removes a case study', async () => {
+    prisma.project.findUnique.mockResolvedValue({ id: 'project-1' });
+    prisma.projectCaseStudy.findUnique.mockResolvedValue(caseStudy());
+    prisma.projectCaseStudy.update.mockResolvedValue(
+      caseStudy({
+        context: 'Updated context',
+        responsibilities: ['Second', 'First'],
+        lessonsLearned: null,
+        isPublic: true,
+      }),
+    );
+    prisma.projectCaseStudy.delete.mockResolvedValue(caseStudy());
+
+    await owner.get('/projects/project-1/case-study').expect(200);
+    await owner
+      .patch('/projects/project-1/case-study')
+      .send({
+        context: ' Updated context ',
+        responsibilities: [' Second ', ' First '],
+        lessonsLearned: null,
+      })
+      .expect(200);
+    await owner
+      .patch('/projects/project-1/case-study/publication')
+      .send({ isPublic: true })
+      .expect(200);
+    await owner.delete('/projects/project-1/case-study').expect(200);
+
+    expect(prisma.projectCaseStudy.findUnique).toHaveBeenCalledWith({
+      where: { projectId: 'project-1' },
+      select: projectCaseStudySelect,
+    });
+    expect(prisma.projectCaseStudy.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { projectId: 'project-1' },
+        data: {
+          context: 'Updated context',
+          responsibilities: ['Second', 'First'],
+          lessonsLearned: null,
+        },
+      }),
+    );
+    expect(prisma.projectCaseStudy.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { isPublic: true },
+      }),
+    );
+    expect(prisma.projectCaseStudy.delete).toHaveBeenCalledWith({
+      where: { projectId: 'project-1' },
+      select: projectCaseStudySelect,
+    });
+  });
+
+  it('rejects invalid, empty, duplicate, and missing-project case-study operations', async () => {
+    await owner.post('/projects/project-1/case-study').send({}).expect(400);
+    await owner
+      .post('/projects/project-1/case-study')
+      .send({
+        context: 'Context',
+        problem: 'Problem',
+        role: 'Role',
+        approach: 'Approach',
+        responsibilities: ['   '],
+      })
+      .expect(400);
+
+    prisma.project.findUnique.mockResolvedValue({ id: 'project-1' });
+    await owner.patch('/projects/project-1/case-study').send({}).expect(400);
+    await owner
+      .patch('/projects/project-1/case-study/publication')
+      .send({})
+      .expect(400);
+
+    prisma.project.findUnique.mockResolvedValueOnce(null);
+    await owner
+      .post('/projects/missing-project/case-study')
+      .send({
+        context: 'Context',
+        problem: 'Problem',
+        role: 'Role',
+        approach: 'Approach',
+      })
+      .expect(404);
+
+    prisma.project.findUnique.mockResolvedValue({ id: 'project-1' });
+    prisma.projectCaseStudy.create.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+        code: 'P2002',
+        clientVersion: 'test',
+      }),
+    );
+
+    await owner
+      .post('/projects/project-1/case-study')
+      .send({
+        context: 'Context',
+        problem: 'Problem',
+        role: 'Role',
+        approach: 'Approach',
+      })
+      .expect(409);
+  });
+
+  it('exposes public case studies only when both project and case study are public', async () => {
+    prisma.project.findFirst.mockResolvedValue(
+      project({ isPublic: true, caseStudy: caseStudy({ isPublic: true }) }),
+    );
+
+    const publicResponse = await request(app.getHttpServer())
+      .get('/public/projects/antin-os')
+      .expect(200);
+    const publicBody = publicResponse.body as {
+      caseStudy: { problem: string; isPublic: boolean } | null;
+    };
+
+    expect(publicBody.caseStudy).toMatchObject({
+      problem: 'Recruiters need project depth.',
+      isPublic: true,
+    });
+
+    prisma.project.findFirst.mockResolvedValue(
+      project({
+        isPublic: true,
+        caseStudy: caseStudy({
+          problem: 'Draft-only problem',
+          isPublic: false,
+        }),
+      }),
+    );
+
+    const draftResponse = await request(app.getHttpServer())
+      .get('/public/projects/antin-os')
+      .expect(200);
+    const draftBody = draftResponse.body as { caseStudy: unknown };
+
+    expect(draftBody.caseStudy).toBeNull();
+    expect(JSON.stringify(draftResponse.body)).not.toContain(
+      'Draft-only problem',
+    );
+
+    prisma.project.findFirst.mockResolvedValue(
+      project({ isPublic: true, caseStudy: null }),
+    );
+
+    const noCaseStudyResponse = await request(app.getHttpServer())
+      .get('/public/projects/antin-os')
+      .expect(200);
+    const noCaseStudyBody = noCaseStudyResponse.body as { caseStudy: unknown };
+
+    expect(noCaseStudyBody.caseStudy).toBeNull();
+
+    prisma.project.findFirst.mockResolvedValue(null);
+
+    await request(app.getHttpServer())
+      .get('/public/projects/private-project')
+      .expect(404);
+    expect(prisma.project.findFirst).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: { slug: 'private-project', isPublic: true },
+      }),
+    );
   });
 });

@@ -12,6 +12,48 @@ export interface Project {
   isPublic: boolean;
   createdAt: string;
   updatedAt: string;
+  caseStudy?: ProjectCaseStudy | null;
+}
+
+export interface ProjectCaseStudy {
+  id: string;
+  projectId: string;
+  context: string;
+  problem: string;
+  role: string;
+  approach: string;
+  responsibilities: string[];
+  technicalChallenges: string[];
+  outcomes: string[];
+  lessonsLearned: string | null;
+  isPublic: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type PublicProjectCaseStudy = Omit<
+  ProjectCaseStudy,
+  'isPublic' | 'createdAt'
+> & {
+  isPublic: true;
+};
+
+export interface CreateProjectCaseStudyInput {
+  context: string;
+  problem: string;
+  role: string;
+  approach: string;
+  responsibilities?: string[];
+  technicalChallenges?: string[];
+  outcomes?: string[];
+  lessonsLearned?: string | null;
+  isPublic?: boolean;
+}
+
+export type UpdateProjectCaseStudyInput = Partial<CreateProjectCaseStudyInput>;
+
+export interface UpdateProjectCaseStudyPublicationInput {
+  isPublic: boolean;
 }
 
 export interface CreateProjectInput {
