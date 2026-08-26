@@ -2,10 +2,20 @@ import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@prisma/prisma.service';
-import { App } from 'supertest/types';
+import type { App } from 'supertest/types';
 import request from 'supertest';
 import { configureApp } from '@src/app.setup';
 import { createPasswordHash } from '@src/auth/password-hash';
+import { CASE_STUDY_DRAFT_CONFIG } from './case-study-draft/case-study-draft.config';
+import type { CaseStudyDraftConfig } from './case-study-draft/case-study-draft.config';
+import {
+  CASE_STUDY_DRAFT_PROVIDER,
+  CaseStudyDraftProviderError,
+} from './case-study-draft/case-study-draft.provider';
+import type {
+  CaseStudyDraftProvider,
+  CaseStudyDraftProviderInput,
+} from './case-study-draft/case-study-draft.provider';
 import { projectCaseStudySelect, projectSelect } from './project-response';
 import { ProjectsModule } from './projects.module';
 import {
@@ -34,6 +44,10 @@ type MockProjectImageStorage = {
   [Key in keyof ProjectImageStorage]: jest.Mock;
 };
 
+type MockCaseStudyDraftProvider = {
+  [Key in keyof CaseStudyDraftProvider]: jest.Mock;
+};
+
 function createMockPrisma(): MockPrismaService {
   return {
     project: {
@@ -58,6 +72,25 @@ function createMockProjectImageStorage(): MockProjectImageStorage {
     createUpload: jest.fn(),
     getUrl: jest.fn(),
     delete: jest.fn(),
+  };
+}
+
+function createMockCaseStudyDraftProvider(): MockCaseStudyDraftProvider {
+  return {
+    generate: jest.fn(),
+  };
+}
+
+function createDraftConfig(): CaseStudyDraftConfig {
+  return {
+    enabled: true,
+    provider: 'mock',
+    timeoutMs: 30_000,
+    rateLimit: { max: 100, windowSeconds: 60 },
+    usageLimit: { max: 100, windowSeconds: 60 },
+    maxNotesLength: 2_000,
+    maxOutputTokens: 1_200,
+    errors: [],
   };
 }
 
@@ -101,10 +134,27 @@ function caseStudy(overrides = {}) {
   };
 }
 
+function caseStudyDraft(overrides = {}) {
+  return {
+    context: 'Generated context',
+    problem: 'Generated problem',
+    role: 'Generated role',
+    approach: 'Generated approach',
+    responsibilities: ['Generated responsibility'],
+    technicalChallenges: ['Generated challenge'],
+    outcomes: ['Generated outcome'],
+    lessonsLearned: 'Generated lesson',
+    needsConfirmation: ['Confirm generated claims'],
+    ...overrides,
+  };
+}
+
 describe('ProjectsController', () => {
   let app: INestApplication<App>;
   let prisma: MockPrismaService;
   let storage: MockProjectImageStorage;
+  let draftProvider: MockCaseStudyDraftProvider;
+  let draftConfig: CaseStudyDraftConfig;
   let owner: ReturnType<typeof request.agent>;
 
   beforeEach(async () => {
@@ -117,7 +167,10 @@ describe('ProjectsController', () => {
 
     prisma = createMockPrisma();
     storage = createMockProjectImageStorage();
+    draftProvider = createMockCaseStudyDraftProvider();
+    draftConfig = createDraftConfig();
     storage.getUrl.mockResolvedValue('https://cdn.example.com/project.png');
+    draftProvider.generate.mockResolvedValue(caseStudyDraft());
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [ProjectsModule],
@@ -126,6 +179,10 @@ describe('ProjectsController', () => {
       .useValue(prisma)
       .overrideProvider(PROJECT_IMAGE_STORAGE)
       .useValue(storage)
+      .overrideProvider(CASE_STUDY_DRAFT_PROVIDER)
+      .useValue(draftProvider)
+      .overrideProvider(CASE_STUDY_DRAFT_CONFIG)
+      .useValue(draftConfig)
       .compile();
 
     app = moduleFixture.createNestApplication();
@@ -170,6 +227,10 @@ describe('ProjectsController', () => {
       .send({})
       .expect(401);
     await request(app.getHttpServer())
+      .post('/projects/project-1/case-study/draft')
+      .send({})
+      .expect(401);
+    await request(app.getHttpServer())
       .patch('/projects/project-1/case-study')
       .send({ context: 'Updated' })
       .expect(401);
@@ -188,6 +249,7 @@ describe('ProjectsController', () => {
     expect(prisma.projectCaseStudy.update).not.toHaveBeenCalled();
     expect(prisma.projectCaseStudy.delete).not.toHaveBeenCalled();
     expect(storage.createUpload).not.toHaveBeenCalled();
+    expect(draftProvider.generate).not.toHaveBeenCalled();
   });
 
   it('creates a managed project and defaults isPublic to false when omitted', async () => {
@@ -633,6 +695,173 @@ describe('ProjectsController', () => {
         approach: 'Approach',
       })
       .expect(409);
+  });
+
+  it('generates an authenticated structured case-study draft without writing to the database', async () => {
+    prisma.project.findUnique.mockResolvedValue(project());
+    let generationInput: CaseStudyDraftProviderInput | null = null;
+    draftProvider.generate.mockImplementation(
+      (input: CaseStudyDraftProviderInput) => {
+        generationInput = input;
+        return Promise.resolve(
+          caseStudyDraft({
+            responsibilities: ['Generated first', 'Generated second'],
+          }),
+        );
+      },
+    );
+
+    const response = await owner
+      .post('/projects/project-1/case-study/draft')
+      .send({ notes: ' Keep claims conservative. ' })
+      .expect(201);
+
+    expect(response.body).toMatchObject({
+      draft: {
+        context: 'Generated context',
+        responsibilities: ['Generated first', 'Generated second'],
+        needsConfirmation: ['Confirm generated claims'],
+      },
+    });
+    expect(prisma.project.findUnique).toHaveBeenCalledWith({
+      where: { id: 'project-1' },
+      select: {
+        id: true,
+        title: true,
+        slug: true,
+        summary: true,
+        description: true,
+        techStack: true,
+        repoUrl: true,
+        liveUrl: true,
+        isPublic: true,
+      },
+    });
+    expect(generationInput?.project).toMatchObject({
+      id: 'project-1',
+      title: 'Antin OS',
+      techStack: ['NestJS', 'Prisma'],
+    });
+    expect(generationInput?.notes).toBe('Keep claims conservative.');
+    expect(generationInput?.maxOutputTokens).toBe(1_200);
+    expect(generationInput?.signal).toBeInstanceOf(AbortSignal);
+    expect(prisma.projectCaseStudy.create).not.toHaveBeenCalled();
+    expect(prisma.projectCaseStudy.update).not.toHaveBeenCalled();
+    expect(prisma.projectCaseStudy.delete).not.toHaveBeenCalled();
+  });
+
+  it('rejects draft generation before provider execution for invalid input, missing project, and config failures', async () => {
+    draftConfig.maxNotesLength = 5;
+    await owner
+      .post('/projects/project-1/case-study/draft')
+      .send({ notes: 'too long' })
+      .expect(400);
+    expect(draftProvider.generate).not.toHaveBeenCalled();
+
+    draftConfig.maxNotesLength = 2_000;
+    prisma.project.findUnique.mockResolvedValueOnce(null);
+    await owner
+      .post('/projects/missing-project/case-study/draft')
+      .send({})
+      .expect(404);
+    expect(draftProvider.generate).not.toHaveBeenCalled();
+
+    draftConfig.enabled = false;
+    await owner
+      .post('/projects/project-1/case-study/draft')
+      .send({})
+      .expect(503);
+    expect(draftProvider.generate).not.toHaveBeenCalled();
+
+    draftConfig.enabled = true;
+    draftConfig.errors.push('OPENAI_MODEL is required');
+    await owner
+      .post('/projects/project-1/case-study/draft')
+      .send({})
+      .expect(503);
+    expect(draftProvider.generate).not.toHaveBeenCalled();
+  });
+
+  it('enforces draft rate and usage limits before provider execution', async () => {
+    prisma.project.findUnique.mockResolvedValue(project());
+    draftConfig.rateLimit = { max: 1, windowSeconds: 60 };
+
+    await owner
+      .post('/projects/project-1/case-study/draft')
+      .send({})
+      .expect(201);
+    await owner
+      .post('/projects/project-1/case-study/draft')
+      .send({})
+      .expect(429);
+    expect(draftProvider.generate).toHaveBeenCalledTimes(1);
+  });
+
+  it('enforces draft usage limits before provider execution', async () => {
+    prisma.project.findUnique.mockResolvedValue(project());
+    draftConfig.rateLimit = { max: 10, windowSeconds: 60 };
+    draftConfig.usageLimit = { max: 1, windowSeconds: 60 };
+
+    await owner
+      .post('/projects/project-1/case-study/draft')
+      .send({})
+      .expect(201);
+    await owner
+      .post('/projects/project-1/case-study/draft')
+      .send({})
+      .expect(429);
+    expect(draftProvider.generate).toHaveBeenCalledTimes(1);
+  });
+
+  it('maps draft provider timeout, malformed output, and provider failures to safe errors', async () => {
+    prisma.project.findUnique.mockResolvedValue(project());
+
+    draftProvider.generate.mockRejectedValueOnce(
+      new CaseStudyDraftProviderError('timeout', 'raw timeout'),
+    );
+    await owner
+      .post('/projects/project-1/case-study/draft')
+      .send({})
+      .expect(504);
+
+    draftProvider.generate.mockRejectedValueOnce(
+      new CaseStudyDraftProviderError('malformed', 'raw malformed output'),
+    );
+    await owner
+      .post('/projects/project-1/case-study/draft')
+      .send({})
+      .expect(502);
+
+    draftProvider.generate.mockRejectedValueOnce(
+      new CaseStudyDraftProviderError('provider', 'raw provider failure'),
+    );
+    await owner
+      .post('/projects/project-1/case-study/draft')
+      .send({})
+      .expect(502);
+  });
+
+  it('does not expose generated draft content through public project APIs before manual save and publication', async () => {
+    prisma.project.findUnique.mockResolvedValue(project());
+    draftProvider.generate.mockResolvedValue(
+      caseStudyDraft({ problem: 'Generated private problem' }),
+    );
+
+    await owner
+      .post('/projects/project-1/case-study/draft')
+      .send({})
+      .expect(201);
+
+    prisma.project.findFirst.mockResolvedValue(
+      project({ isPublic: true, caseStudy: null }),
+    );
+
+    const response = await request(app.getHttpServer())
+      .get('/public/projects/antin-os')
+      .expect(200);
+
+    expect(response.text).not.toContain('Generated private problem');
+    expect(response.body).toMatchObject({ caseStudy: null });
   });
 
   it('exposes public case studies only when both project and case study are public', async () => {

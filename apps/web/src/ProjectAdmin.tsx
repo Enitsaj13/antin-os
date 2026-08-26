@@ -9,6 +9,7 @@ import {
   Plus,
   RotateCcw,
   Save,
+  Sparkles,
   Trash2,
   X,
 } from 'lucide-react';
@@ -18,6 +19,7 @@ import {
   slugify,
 } from '@antin-os/shared';
 import type {
+  CaseStudyDraft,
   CreateProjectCaseStudyInput,
   CreateProjectInput,
   Project,
@@ -28,6 +30,7 @@ import {
   useCreateProjectMutation,
   useDeleteProjectCaseStudyMutation,
   useDeleteProjectMutation,
+  useGenerateProjectCaseStudyDraftMutation,
   useUpdateProjectCaseStudyMutation,
   useUpdateProjectCaseStudyPublicationMutation,
   useUpdateProjectMutation,
@@ -203,6 +206,19 @@ function caseStudyToForm(caseStudy: ProjectCaseStudy): CaseStudyFormValues {
   };
 }
 
+function draftToForm(draft: CaseStudyDraft): CaseStudyFormValues {
+  return {
+    context: draft.context,
+    problem: draft.problem,
+    role: draft.role,
+    approach: draft.approach,
+    responsibilities: draft.responsibilities,
+    technicalChallenges: draft.technicalChallenges,
+    outcomes: draft.outcomes,
+    lessonsLearned: draft.lessonsLearned ?? '',
+  };
+}
+
 function toProjectInput(values: ProjectFormValues): CreateProjectInput {
   return {
     title: values.title.trim(),
@@ -318,6 +334,19 @@ function hasIncompleteCaseStudy(values: CaseStudyFormValues) {
     values.technicalChallenges.length === 0 ||
     values.outcomes.length === 0 ||
     !values.lessonsLearned.trim()
+  );
+}
+
+function hasCaseStudyFormContent(values: CaseStudyFormValues) {
+  return (
+    values.context.trim() ||
+    values.problem.trim() ||
+    values.role.trim() ||
+    values.approach.trim() ||
+    values.responsibilities.some((value) => value.trim()) ||
+    values.technicalChallenges.some((value) => value.trim()) ||
+    values.outcomes.some((value) => value.trim()) ||
+    values.lessonsLearned.trim()
   );
 }
 
@@ -604,6 +633,17 @@ export function ProjectsAdmin({ onNavigate }: { onNavigate: Navigate }) {
                           Edit
                         </button>
                         <button
+                          className={BUTTON_CLASS}
+                          type="button"
+                          aria-label={`Draft case study for ${project.title}`}
+                          onClick={() =>
+                            onNavigate(`/admin/projects/${project.id}/edit`)
+                          }
+                        >
+                          <Sparkles size={16} aria-hidden="true" />
+                          Draft case study
+                        </button>
+                        <button
                           className={DANGER_BUTTON_CLASS}
                           type="button"
                           aria-label={`Delete ${project.title}`}
@@ -654,6 +694,17 @@ export function ProjectsAdmin({ onNavigate }: { onNavigate: Navigate }) {
                     >
                       <Edit3 size={16} aria-hidden="true" />
                       Edit
+                    </button>
+                    <button
+                      className={BUTTON_CLASS}
+                      type="button"
+                      aria-label={`Draft case study for ${project.title}`}
+                      onClick={() =>
+                        onNavigate(`/admin/projects/${project.id}/edit`)
+                      }
+                    >
+                      <Sparkles size={16} aria-hidden="true" />
+                      Draft case study
                     </button>
                     <button
                       className={DANGER_BUTTON_CLASS}
@@ -744,13 +795,21 @@ function CaseStudySection({
   const updatePublicationMutation =
     useUpdateProjectCaseStudyPublicationMutation();
   const deleteCaseStudyMutation = useDeleteProjectCaseStudyMutation();
+  const generateDraftMutation = useGenerateProjectCaseStudyDraftMutation();
   const caseStudy = caseStudyQuery.data ?? null;
   const [hasStartedDraft, setHasStartedDraft] = useState(false);
   const [form, setForm] = useState<CaseStudyFormValues>(EMPTY_CASE_STUDY);
+  const [draftNotes, setDraftNotes] = useState('');
+  const [draftForm, setDraftForm] = useState<CaseStudyFormValues | null>(null);
+  const [draftNeedsConfirmation, setDraftNeedsConfirmation] = useState<
+    string[]
+  >([]);
+  const [draftError, setDraftError] = useState('');
   const [errors, setErrors] = useState<CaseStudyFormErrors>({});
   const [status, setStatus] = useState('');
   const [showPublishWarning, setShowPublishWarning] = useState(false);
   const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
+  const [showReplaceWarning, setShowReplaceWarning] = useState(false);
 
   useEffect(() => {
     if (caseStudyQuery.data) {
@@ -768,7 +827,8 @@ function CaseStudySection({
     createCaseStudyMutation.isPending ||
     updateCaseStudyMutation.isPending ||
     updatePublicationMutation.isPending ||
-    deleteCaseStudyMutation.isPending;
+    deleteCaseStudyMutation.isPending ||
+    generateDraftMutation.isPending;
 
   function updateField<K extends keyof CaseStudyFormValues>(
     key: K,
@@ -777,6 +837,61 @@ function CaseStudySection({
     setErrors((current) => ({ ...current, [key]: undefined, form: undefined }));
     setStatus('');
     setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function updateDraftField<K extends keyof CaseStudyFormValues>(
+    key: K,
+    value: CaseStudyFormValues[K],
+  ) {
+    setDraftError('');
+    setDraftForm((current) =>
+      current ? { ...current, [key]: value } : current,
+    );
+  }
+
+  async function generateDraft() {
+    if (generateDraftMutation.isPending) {
+      return;
+    }
+
+    setDraftError('');
+    setStatus('');
+    setDraftForm(null);
+    setDraftNeedsConfirmation([]);
+
+    try {
+      const response = await generateDraftMutation.mutateAsync({
+        projectId,
+        input: { notes: draftNotes },
+      });
+      setDraftForm(draftToForm(response.draft));
+      setDraftNeedsConfirmation(response.draft.needsConfirmation);
+    } catch (error) {
+      setDraftError(errorMessage(error, 'AI draft generation failed.'));
+    }
+  }
+
+  function acceptDraft(skipWarning = false) {
+    if (!draftForm) {
+      return;
+    }
+
+    if (!skipWarning && hasCaseStudyFormContent(form)) {
+      setShowReplaceWarning(true);
+      return;
+    }
+
+    setForm(draftForm);
+    setHasStartedDraft(true);
+    setShowReplaceWarning(false);
+    setStatus('AI draft copied into the case-study form. Review and save it.');
+    setErrors({});
+  }
+
+  function cancelDraftReview() {
+    setDraftForm(null);
+    setDraftNeedsConfirmation([]);
+    setDraftError('');
   }
 
   async function saveCaseStudy(isPublic: boolean) {
@@ -856,6 +971,7 @@ function CaseStudySection({
       setShowRemoveConfirm(false);
       setHasStartedDraft(false);
       setForm(EMPTY_CASE_STUDY);
+      cancelDraftReview();
       setStatus('Case study removed.');
     } catch (error) {
       setErrors({
@@ -947,6 +1063,211 @@ function CaseStudySection({
           {errors.form}
         </p>
       ) : null}
+
+      <div className="mb-4 grid gap-4 border border-teal-200 bg-teal-50 p-4">
+        <div className="grid gap-1">
+          <p className="m-0 text-sm font-semibold uppercase tracking-wide text-teal-800">
+            AI draft
+          </p>
+          <h3 className="m-0 text-lg font-semibold text-slate-950">
+            Generate a case-study draft
+          </h3>
+          <p className="m-0 text-sm text-slate-700">
+            Drafting uses the current project record and optional notes. It does
+            not save or publish anything until you accept and save manually.
+          </p>
+        </div>
+
+        <div className={FIELD_CLASS}>
+          <label htmlFor="case-study-ai-notes">Optional owner notes</label>
+          <textarea
+            id="case-study-ai-notes"
+            className={`${INPUT_CLASS} min-h-24 resize-y bg-white`}
+            disabled={isPending}
+            value={draftNotes}
+            onChange={(event) => setDraftNotes(event.target.value)}
+          />
+        </div>
+
+        {draftError ? (
+          <div
+            className="grid gap-3 border border-red-300 bg-red-50 p-3 text-red-700"
+            role="alert"
+          >
+            <p className="m-0">{draftError}</p>
+            <button
+              className={BUTTON_CLASS}
+              type="button"
+              disabled={generateDraftMutation.isPending}
+              onClick={() => void generateDraft()}
+            >
+              <RotateCcw size={18} aria-hidden="true" />
+              Retry AI draft
+            </button>
+          </div>
+        ) : null}
+
+        <div className="flex flex-wrap gap-2">
+          <button
+            className={PRIMARY_BUTTON_CLASS}
+            type="button"
+            disabled={isPending}
+            onClick={() => void generateDraft()}
+          >
+            <Sparkles size={18} aria-hidden="true" />
+            {generateDraftMutation.isPending ? 'Generating' : 'Generate draft'}
+          </button>
+          {draftForm ? (
+            <button
+              className={BUTTON_CLASS}
+              type="button"
+              disabled={isPending}
+              onClick={cancelDraftReview}
+            >
+              <X size={18} aria-hidden="true" />
+              Cancel draft review
+            </button>
+          ) : null}
+        </div>
+
+        {generateDraftMutation.isPending ? (
+          <p className="m-0" role="status">
+            Generating AI case-study draft
+          </p>
+        ) : null}
+
+        {draftForm ? (
+          <div className="grid gap-4 border border-slate-300 bg-white p-4">
+            <div>
+              <h4 className="m-0 text-lg font-semibold">Review AI draft</h4>
+              <p className="m-0 text-sm text-slate-600">
+                Edit the generated fields here before accepting them into the
+                case-study form.
+              </p>
+            </div>
+
+            {draftNeedsConfirmation.length > 0 ? (
+              <div className="border border-amber-300 bg-amber-50 p-3">
+                <p className="m-0 font-medium text-amber-900">
+                  Needs confirmation
+                </p>
+                <ul className="m-0 mt-2 grid gap-1 pl-5 text-amber-900">
+                  {draftNeedsConfirmation.map((item, index) => (
+                    <li key={`${item}-${index}`}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            <div className={FIELD_CLASS}>
+              <label htmlFor="case-study-draft-context">Draft context</label>
+              <textarea
+                id="case-study-draft-context"
+                className={`${INPUT_CLASS} min-h-24 resize-y`}
+                disabled={isPending}
+                value={draftForm.context}
+                onChange={(event) =>
+                  updateDraftField('context', event.target.value)
+                }
+              />
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className={FIELD_CLASS}>
+                <label htmlFor="case-study-draft-problem">Draft problem</label>
+                <textarea
+                  id="case-study-draft-problem"
+                  className={`${INPUT_CLASS} min-h-28 resize-y`}
+                  disabled={isPending}
+                  value={draftForm.problem}
+                  onChange={(event) =>
+                    updateDraftField('problem', event.target.value)
+                  }
+                />
+              </div>
+
+              <div className={FIELD_CLASS}>
+                <label htmlFor="case-study-draft-role">Draft role</label>
+                <textarea
+                  id="case-study-draft-role"
+                  className={`${INPUT_CLASS} min-h-28 resize-y`}
+                  disabled={isPending}
+                  value={draftForm.role}
+                  onChange={(event) =>
+                    updateDraftField('role', event.target.value)
+                  }
+                />
+              </div>
+            </div>
+
+            <div className={FIELD_CLASS}>
+              <label htmlFor="case-study-draft-approach">Draft approach</label>
+              <textarea
+                id="case-study-draft-approach"
+                className={`${INPUT_CLASS} min-h-28 resize-y`}
+                disabled={isPending}
+                value={draftForm.approach}
+                onChange={(event) =>
+                  updateDraftField('approach', event.target.value)
+                }
+              />
+            </div>
+
+            <RepeatableTextEntries
+              id="case-study-draft-responsibilities"
+              label="Draft responsibilities"
+              values={draftForm.responsibilities}
+              disabled={isPending}
+              onChange={(values) =>
+                updateDraftField('responsibilities', values)
+              }
+            />
+
+            <RepeatableTextEntries
+              id="case-study-draft-challenges"
+              label="Draft challenges"
+              values={draftForm.technicalChallenges}
+              disabled={isPending}
+              onChange={(values) =>
+                updateDraftField('technicalChallenges', values)
+              }
+            />
+
+            <RepeatableTextEntries
+              id="case-study-draft-outcomes"
+              label="Draft outcomes"
+              values={draftForm.outcomes}
+              disabled={isPending}
+              onChange={(values) => updateDraftField('outcomes', values)}
+            />
+
+            <div className={FIELD_CLASS}>
+              <label htmlFor="case-study-draft-lessons">
+                Draft lessons learned
+              </label>
+              <textarea
+                id="case-study-draft-lessons"
+                className={`${INPUT_CLASS} min-h-28 resize-y`}
+                disabled={isPending}
+                value={draftForm.lessonsLearned}
+                onChange={(event) =>
+                  updateDraftField('lessonsLearned', event.target.value)
+                }
+              />
+            </div>
+
+            <button
+              className={PRIMARY_BUTTON_CLASS}
+              type="button"
+              disabled={isPending}
+              onClick={() => acceptDraft()}
+            >
+              <Check size={18} aria-hidden="true" />
+              Accept into case-study form
+            </button>
+          </div>
+        ) : null}
+      </div>
 
       {showForm ? (
         <div className="grid gap-4">
@@ -1103,6 +1424,55 @@ function CaseStudySection({
                 Remove case study
               </button>
             ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {showReplaceWarning ? (
+        <div
+          className="fixed inset-0 grid place-items-center bg-slate-950/65 p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="case-study-replace-warning-title"
+        >
+          <div className="grid max-w-md gap-4 border border-slate-300 bg-white p-5">
+            <div className="flex items-start gap-3">
+              <AlertTriangle
+                className="mt-1 text-amber-700"
+                aria-hidden="true"
+              />
+              <div>
+                <h2
+                  className="m-0 text-xl font-semibold"
+                  id="case-study-replace-warning-title"
+                >
+                  Replace current form values?
+                </h2>
+                <p className="m-0 mt-2 text-slate-700">
+                  Accepting this AI draft will replace the current unsaved
+                  values in the case-study form. Stored data will not change
+                  until you save.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap justify-end gap-2">
+              <button
+                className={BUTTON_CLASS}
+                type="button"
+                onClick={() => setShowReplaceWarning(false)}
+              >
+                Keep current values
+              </button>
+              <button
+                className={PRIMARY_BUTTON_CLASS}
+                type="button"
+                disabled={isPending}
+                onClick={() => acceptDraft(true)}
+              >
+                <Check size={18} aria-hidden="true" />
+                Replace form values
+              </button>
+            </div>
           </div>
         </div>
       ) : null}

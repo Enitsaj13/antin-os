@@ -1,4 +1,6 @@
 import type {
+  CaseStudyDraftResponse,
+  CreateCaseStudyDraftInput,
   CreateProjectCaseStudyInput,
   CreateProjectInput,
   ProjectImageUpload,
@@ -32,6 +34,20 @@ export function getProjectCaseStudy(
 ): Promise<ProjectCaseStudy | null> {
   return requestNullableJson<ProjectCaseStudy>(
     `/projects/${encodeURIComponent(projectId)}/case-study`,
+  );
+}
+
+export function generateProjectCaseStudyDraft(
+  projectId: string,
+  input: CreateCaseStudyDraftInput,
+): Promise<CaseStudyDraftResponse> {
+  return requestJson<CaseStudyDraftResponse>(
+    `/projects/${encodeURIComponent(projectId)}/case-study/draft`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    },
   );
 }
 

@@ -67,6 +67,7 @@ const createProject = vi.fn();
 const updateProject = vi.fn();
 const deleteProject = vi.fn();
 const uploadProjectImage = vi.fn();
+const generateProjectCaseStudyDraft = vi.fn();
 const createProjectCaseStudy = vi.fn();
 const updateProjectCaseStudy = vi.fn();
 const updateProjectCaseStudyPublication = vi.fn();
@@ -162,6 +163,7 @@ function resetApiMocks() {
   mockedProjectMutations.useUpdateProjectMutation.mockReset();
   mockedProjectMutations.useDeleteProjectMutation.mockReset();
   mockedProjectMutations.useUploadProjectImageMutation.mockReset();
+  mockedProjectMutations.useGenerateProjectCaseStudyDraftMutation.mockReset();
   mockedProjectMutations.useCreateProjectCaseStudyMutation.mockReset();
   mockedProjectMutations.useUpdateProjectCaseStudyMutation.mockReset();
   mockedProjectMutations.useUpdateProjectCaseStudyPublicationMutation.mockReset();
@@ -204,6 +206,7 @@ function resetApiMocks() {
   updateProject.mockReset();
   deleteProject.mockReset();
   uploadProjectImage.mockReset();
+  generateProjectCaseStudyDraft.mockReset();
   createProjectCaseStudy.mockReset();
   updateProjectCaseStudy.mockReset();
   updateProjectCaseStudyPublication.mockReset();
@@ -507,6 +510,14 @@ function mockProjectHooks(
   } as unknown as ReturnType<
     typeof projectMutations.useUploadProjectImageMutation
   >);
+  mockedProjectMutations.useGenerateProjectCaseStudyDraftMutation.mockReturnValue(
+    {
+      mutateAsync: generateProjectCaseStudyDraft,
+      isPending: false,
+    } as unknown as ReturnType<
+      typeof projectMutations.useGenerateProjectCaseStudyDraftMutation
+    >,
+  );
   mockedProjectMutations.useCreateProjectCaseStudyMutation.mockReturnValue({
     mutateAsync: createProjectCaseStudy,
     isPending: false,
@@ -2980,6 +2991,230 @@ describe('project form', () => {
     await waitFor(() =>
       expect(deleteProjectCaseStudy).toHaveBeenCalledWith('project-1'),
     );
+  });
+
+  it('generates, reviews, accepts, and manually saves an AI case-study draft', async () => {
+    const existing = project();
+    mockProfileHooks();
+    mockProjectHooks([existing], { 'project-1': null });
+    generateProjectCaseStudyDraft.mockResolvedValue({
+      draft: {
+        context: 'Generated context',
+        problem: 'Generated problem',
+        role: 'Generated role',
+        approach: 'Generated approach',
+        responsibilities: ['Generated responsibility'],
+        technicalChallenges: ['Generated challenge'],
+        outcomes: ['Generated outcome'],
+        lessonsLearned: 'Generated lesson',
+        needsConfirmation: ['Confirm the generated outcome.'],
+      },
+    });
+    createProjectCaseStudy.mockResolvedValue(caseStudy({ isPublic: false }));
+
+    renderApp('/admin/projects/project-1/edit');
+
+    fireEvent.change(screen.getByLabelText('Optional owner notes'), {
+      target: { value: 'Use only verified details.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Generate draft' }));
+
+    await waitFor(() =>
+      expect(generateProjectCaseStudyDraft).toHaveBeenCalledWith({
+        projectId: 'project-1',
+        input: { notes: 'Use only verified details.' },
+      }),
+    );
+    expect(
+      screen.getByText('Confirm the generated outcome.'),
+    ).toBeInTheDocument();
+    expect(createProjectCaseStudy).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText('Draft context'), {
+      target: { value: 'Reviewed generated context' },
+    });
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Accept into case-study form' }),
+    );
+
+    expect(screen.getByLabelText('Context')).toHaveValue(
+      'Reviewed generated context',
+    );
+    expect(createProjectCaseStudy).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+
+    await waitFor(() =>
+      expect(createProjectCaseStudy).toHaveBeenCalledWith({
+        projectId: 'project-1',
+        input: expect.objectContaining({
+          context: 'Reviewed generated context',
+          problem: 'Generated problem',
+          role: 'Generated role',
+          approach: 'Generated approach',
+          responsibilities: ['Generated responsibility'],
+          technicalChallenges: ['Generated challenge'],
+          outcomes: ['Generated outcome'],
+          lessonsLearned: 'Generated lesson',
+          isPublic: false,
+        }),
+      }),
+    );
+  });
+
+  it('starts the AI draft flow by selecting a project from project management', () => {
+    const existing = project();
+    mockProfileHooks();
+    mockProjectHooks([existing], { 'project-1': null });
+
+    renderApp('/admin/projects');
+
+    fireEvent.click(
+      screen.getAllByRole('button', {
+        name: 'Draft case study for Portfolio API',
+      })[0],
+    );
+
+    expect(screen.getByRole('heading', { name: 'Edit project' })).toBeVisible();
+    expect(screen.getByText('AI draft')).toBeVisible();
+    expect(screen.getByLabelText('Optional owner notes')).toBeVisible();
+  });
+
+  it('prevents duplicate AI draft submissions while generation is pending', () => {
+    const existing = project();
+    mockProfileHooks();
+    mockProjectHooks([existing], { 'project-1': null });
+    mockedProjectMutations.useGenerateProjectCaseStudyDraftMutation.mockReturnValue(
+      {
+        mutateAsync: generateProjectCaseStudyDraft,
+        isPending: true,
+      } as unknown as ReturnType<
+        typeof projectMutations.useGenerateProjectCaseStudyDraftMutation
+      >,
+    );
+
+    renderApp('/admin/projects/project-1/edit');
+
+    expect(screen.getByRole('button', { name: 'Generating' })).toBeDisabled();
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Generating AI case-study draft',
+    );
+    expect(generateProjectCaseStudyDraft).not.toHaveBeenCalled();
+  });
+
+  it('warns before accepting an AI draft over current case-study form values', async () => {
+    const existing = project();
+    mockProfileHooks();
+    mockProjectHooks([existing], {
+      'project-1': caseStudy({ context: 'Current saved context' }),
+    });
+    generateProjectCaseStudyDraft.mockResolvedValue({
+      draft: {
+        context: 'Generated context',
+        problem: 'Generated problem',
+        role: 'Generated role',
+        approach: 'Generated approach',
+        responsibilities: [],
+        technicalChallenges: [],
+        outcomes: [],
+        lessonsLearned: null,
+        needsConfirmation: [],
+      },
+    });
+
+    renderApp('/admin/projects/project-1/edit');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Generate draft' }));
+    await screen.findByDisplayValue('Generated context');
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Accept into case-study form' }),
+    );
+
+    expect(screen.getByRole('dialog')).toHaveTextContent(
+      'Replace current form values?',
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Keep current values' }),
+    );
+    expect(screen.getByLabelText('Context')).toHaveValue(
+      'Current saved context',
+    );
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Accept into case-study form' }),
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Replace form values' }),
+    );
+    expect(screen.getByLabelText('Context')).toHaveValue('Generated context');
+    expect(updateProjectCaseStudy).not.toHaveBeenCalled();
+  });
+
+  it('shows AI draft errors and allows retry without saving form data', async () => {
+    const existing = project();
+    mockProfileHooks();
+    mockProjectHooks([existing], { 'project-1': null });
+    generateProjectCaseStudyDraft
+      .mockRejectedValueOnce(
+        new Error(
+          '{"message":"AI drafting configuration is incomplete","statusCode":503}',
+        ),
+      )
+      .mockResolvedValueOnce({
+        draft: {
+          context: 'Generated context',
+          problem: 'Generated problem',
+          role: 'Generated role',
+          approach: 'Generated approach',
+          responsibilities: [],
+          technicalChallenges: [],
+          outcomes: [],
+          lessonsLearned: null,
+          needsConfirmation: [],
+        },
+      });
+
+    renderApp('/admin/projects/project-1/edit');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Generate draft' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'AI drafting configuration is incomplete',
+    );
+    expect(createProjectCaseStudy).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry AI draft' }));
+    expect(
+      await screen.findByDisplayValue('Generated context'),
+    ).toBeInTheDocument();
+    expect(createProjectCaseStudy).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['disabled', 'AI drafting is disabled'],
+    ['configuration', 'AI drafting configuration is incomplete'],
+    ['rate-limit', 'AI draft generation rate limit exceeded'],
+    ['usage-limit', 'AI draft generation usage limit exceeded'],
+    ['timeout', 'AI draft generation timed out'],
+    ['malformed-response', 'AI provider returned a malformed draft'],
+    ['provider-error', 'AI provider could not generate a draft'],
+  ])('shows AI draft %s error state with retry', async (_state, message) => {
+    const existing = project();
+    mockProfileHooks();
+    mockProjectHooks([existing], { 'project-1': null });
+    generateProjectCaseStudyDraft.mockRejectedValueOnce(
+      new Error(JSON.stringify({ message })),
+    );
+
+    renderApp('/admin/projects/project-1/edit');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Generate draft' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(message);
+    expect(
+      screen.getByRole('button', { name: 'Retry AI draft' }),
+    ).toBeVisible();
+    expect(createProjectCaseStudy).not.toHaveBeenCalled();
+    expect(updateProjectCaseStudy).not.toHaveBeenCalled();
   });
 
   it('preserves case-study form input when API save fails', async () => {

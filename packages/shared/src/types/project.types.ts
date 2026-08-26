@@ -56,6 +56,26 @@ export interface UpdateProjectCaseStudyPublicationInput {
   isPublic: boolean;
 }
 
+export interface CaseStudyDraft {
+  context: string;
+  problem: string;
+  role: string;
+  approach: string;
+  responsibilities: string[];
+  technicalChallenges: string[];
+  outcomes: string[];
+  lessonsLearned: string | null;
+  needsConfirmation: string[];
+}
+
+export interface CreateCaseStudyDraftInput {
+  notes?: string;
+}
+
+export interface CaseStudyDraftResponse {
+  draft: CaseStudyDraft;
+}
+
 export interface CreateProjectInput {
   title: string;
   slug: string;

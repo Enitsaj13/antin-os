@@ -80,6 +80,44 @@ the API, validated server-side, stored privately in S3, and downloaded through
 `/public/resume/download` only when published. Full AWS setup:
 [AWS S3 Project Images](../operations/aws-s3-project-images.md).
 
+AI case-study drafting is disabled by default. Keep these values server-side in
+`apps/api/.env`; do not create `VITE_*` or other browser-exposed AI variables:
+
+```bash
+AI_DRAFTING_ENABLED=false
+AI_PROVIDER=
+OPENAI_API_KEY=
+OPENAI_MODEL=
+AI_DRAFT_TIMEOUT_MS=30000
+AI_DRAFT_RATE_LIMIT=5/60
+AI_DRAFT_USAGE_LIMIT=25/86400
+AI_DRAFT_MAX_NOTES_LENGTH=2000
+AI_DRAFT_MAX_OUTPUT_TOKENS=1200
+```
+
+Use mock mode for zero-cost local development and automated tests:
+
+```bash
+AI_DRAFTING_ENABLED=true
+AI_PROVIDER=mock
+```
+
+Use real OpenAI drafting only when you intentionally configure all required
+server-side values:
+
+```bash
+AI_DRAFTING_ENABLED=true
+AI_PROVIDER=openai
+OPENAI_API_KEY=<your-api-key>
+OPENAI_MODEL=<model-available-to-your-account>
+```
+
+The app uses the OpenAI Responses API with strict structured output. It does not
+hardcode a model, silently switch to a paid model/provider, or assume free-plan
+access is permanent. Rate and usage limits are in-memory request-count limits;
+they reset after an API restart and do not coordinate across multiple API
+instances.
+
 ## Run Locally
 
 ```bash

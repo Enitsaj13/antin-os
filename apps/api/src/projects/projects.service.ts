@@ -1,14 +1,32 @@
 import {
+  BadGatewayException,
   BadRequestException,
   ConflictException,
+  GatewayTimeoutException,
+  HttpException,
+  HttpStatus,
   Inject,
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
-import type { ProjectCaseStudy, ProjectImageUpload } from '@antin-os/shared';
+import type {
+  CaseStudyDraftResponse,
+  ProjectCaseStudy,
+  ProjectImageUpload,
+} from '@antin-os/shared';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@prisma/prisma.service';
+import { CASE_STUDY_DRAFT_CONFIG } from './case-study-draft/case-study-draft.config';
+import type { CaseStudyDraftConfig } from './case-study-draft/case-study-draft.config';
+import { CaseStudyDraftLimiter } from './case-study-draft/case-study-draft.limiter';
+import {
+  CASE_STUDY_DRAFT_PROVIDER,
+  CaseStudyDraftProviderError,
+} from './case-study-draft/case-study-draft.provider';
+import type { CaseStudyDraftProvider } from './case-study-draft/case-study-draft.provider';
+import { CreateCaseStudyDraftDto } from './dto/create-case-study-draft.dto';
 import { CreateProjectCaseStudyDto } from './dto/create-project-case-study.dto';
 import { CreateProjectImageUploadDto } from './dto/create-project-image-upload.dto';
 import { CreateProjectDto } from './dto/create-project.dto';
@@ -70,6 +88,11 @@ export class ProjectsService {
     private readonly prisma: PrismaService,
     @Inject(PROJECT_IMAGE_STORAGE)
     private readonly projectImageStorage: ProjectImageStorage,
+    @Inject(CASE_STUDY_DRAFT_CONFIG)
+    private readonly caseStudyDraftConfig: CaseStudyDraftConfig,
+    @Inject(CASE_STUDY_DRAFT_PROVIDER)
+    private readonly caseStudyDraftProvider: CaseStudyDraftProvider,
+    private readonly caseStudyDraftLimiter: CaseStudyDraftLimiter,
   ) {}
 
   async create(dto: CreateProjectDto): Promise<ProjectResponse> {
@@ -84,7 +107,7 @@ export class ProjectsService {
           repoUrl: dto.repoUrl,
           liveUrl: dto.liveUrl,
           imageUrl: dto.imageUrl,
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
           imageKey: dto.imageKey,
           isPublic: dto.isPublic ?? false,
         } satisfies ProjectCreateData,
@@ -241,6 +264,80 @@ export class ProjectsService {
     }
   }
 
+  async createCaseStudyDraft(
+    projectId: string,
+    dto: CreateCaseStudyDraftDto,
+  ): Promise<CaseStudyDraftResponse> {
+    this.ensureDraftingConfigured();
+
+    const notes = dto.notes?.trim();
+
+    if (notes && notes.length > this.caseStudyDraftConfig.maxNotesLength) {
+      throw new BadRequestException(
+        `Owner notes must be ${this.caseStudyDraftConfig.maxNotesLength} characters or fewer`,
+      );
+    }
+
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: {
+        id: true,
+        title: true,
+        slug: true,
+        summary: true,
+        description: true,
+        techStack: true,
+        repoUrl: true,
+        liveUrl: true,
+        isPublic: true,
+      },
+    });
+
+    if (!project) {
+      throw new NotFoundException('Project not found');
+    }
+
+    const limitResult = this.caseStudyDraftLimiter.consume(
+      this.caseStudyDraftConfig.rateLimit,
+      this.caseStudyDraftConfig.usageLimit,
+    );
+
+    if (limitResult === 'rate-limit') {
+      throw new HttpException(
+        'AI draft generation rate limit exceeded',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    if (limitResult === 'usage-limit') {
+      throw new HttpException(
+        'AI draft generation usage limit exceeded',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    const abortController = new AbortController();
+    const timeout = setTimeout(
+      () => abortController.abort(),
+      this.caseStudyDraftConfig.timeoutMs,
+    );
+
+    try {
+      const draft = await this.caseStudyDraftProvider.generate({
+        project,
+        notes: notes || undefined,
+        maxOutputTokens: this.caseStudyDraftConfig.maxOutputTokens,
+        signal: abortController.signal,
+      });
+
+      return { draft };
+    } catch (error) {
+      this.handleDraftProviderError(error);
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
   async updateCaseStudy(
     projectId: string,
     dto: UpdateProjectCaseStudyDto,
@@ -369,6 +466,40 @@ export class ProjectsService {
     }
 
     throw error;
+  }
+
+  private ensureDraftingConfigured(): void {
+    if (!this.caseStudyDraftConfig.enabled) {
+      throw new ServiceUnavailableException('AI drafting is disabled');
+    }
+
+    if (this.caseStudyDraftConfig.errors.length > 0) {
+      throw new ServiceUnavailableException(
+        'AI drafting configuration is incomplete',
+      );
+    }
+  }
+
+  private handleDraftProviderError(error: unknown): never {
+    if (error instanceof CaseStudyDraftProviderError) {
+      if (error.code === 'timeout') {
+        throw new GatewayTimeoutException('AI draft generation timed out');
+      }
+
+      if (error.code === 'configuration') {
+        throw new ServiceUnavailableException(
+          'AI drafting configuration is incomplete',
+        );
+      }
+
+      if (error.code === 'malformed') {
+        throw new BadGatewayException('AI provider returned a malformed draft');
+      }
+
+      throw new BadGatewayException('AI provider could not generate a draft');
+    }
+
+    throw new BadGatewayException('AI provider could not generate a draft');
   }
 
   private toCaseStudyUpdateData(

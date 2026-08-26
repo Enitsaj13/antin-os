@@ -988,3 +988,131 @@ test('redirects to login and returns to the profile admin form after login', asy
   );
   await expect(page.getByRole('button', { name: 'Save' })).toBeVisible();
 });
+
+test('generates, reviews, accepts, and saves an AI case-study draft in project admin', async ({
+  page,
+}) => {
+  let draftRequested = false;
+  let savedCaseStudy: unknown = null;
+
+  await page.route('http://localhost:3001/auth/session', async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: corsHeaders,
+      json: { authenticated: true, user: { username: 'owner' } },
+    });
+  });
+
+  await page.route(
+    'http://localhost:3001/projects/project-1',
+    async (route) => {
+      await route.fulfill({
+        status: 200,
+        headers: corsHeaders,
+        json: {
+          id: 'project-1',
+          title: 'Portfolio API',
+          slug: 'portfolio-api',
+          summary: 'A portfolio API',
+          description: 'Detailed description',
+          techStack: ['NestJS', 'Prisma'],
+          repoUrl: 'https://github.com/example/repo',
+          liveUrl: 'https://example.com',
+          imageUrl: null,
+          imageKey: null,
+          isPublic: true,
+          createdAt: '2026-08-13T10:00:00.000Z',
+          updatedAt: '2026-08-14T10:00:00.000Z',
+        },
+      });
+    },
+  );
+
+  await page.route(
+    'http://localhost:3001/projects/project-1/case-study',
+    async (route) => {
+      const request = route.request();
+
+      if (request.method() === 'OPTIONS') {
+        await route.fulfill({ status: 204, headers: corsHeaders });
+        return;
+      }
+
+      if (request.method() === 'GET') {
+        await route.fulfill({ status: 404, headers: corsHeaders, body: '' });
+        return;
+      }
+
+      if (request.method() === 'POST') {
+        savedCaseStudy = request.postDataJSON();
+        await route.fulfill({
+          status: 201,
+          headers: corsHeaders,
+          json: {
+            id: 'case-study-1',
+            projectId: 'project-1',
+            ...(savedCaseStudy as object),
+            isPublic: false,
+            createdAt: '2026-08-13T10:00:00.000Z',
+            updatedAt: '2026-08-14T10:00:00.000Z',
+          },
+        });
+        return;
+      }
+
+      await route.fulfill({ status: 404, headers: corsHeaders, body: '' });
+    },
+  );
+
+  await page.route(
+    'http://localhost:3001/projects/project-1/case-study/draft',
+    async (route) => {
+      draftRequested = true;
+      await route.fulfill({
+        status: 201,
+        headers: corsHeaders,
+        json: {
+          draft: {
+            context: 'Generated context',
+            problem: 'Generated problem',
+            role: 'Generated role',
+            approach: 'Generated approach',
+            responsibilities: ['Generated responsibility'],
+            technicalChallenges: ['Generated challenge'],
+            outcomes: ['Generated outcome'],
+            lessonsLearned: 'Generated lesson',
+            needsConfirmation: ['Confirm the generated outcome.'],
+          },
+        },
+      });
+    },
+  );
+
+  await page.goto('/admin/projects/project-1/edit');
+
+  await page.getByLabel('Optional owner notes').fill('Use verified claims.');
+  await page.getByRole('button', { name: 'Generate draft' }).click();
+  await expect.poll(() => draftRequested).toBe(true);
+  await expect(page.getByText('Confirm the generated outcome.')).toBeVisible();
+
+  await page.getByLabel('Draft context').fill('Reviewed generated context');
+  await page
+    .getByRole('button', { name: 'Accept into case-study form' })
+    .click();
+  await expect(
+    page.getByRole('textbox', { name: 'Context', exact: true }),
+  ).toHaveValue('Reviewed generated context');
+  await expect.poll(() => savedCaseStudy).toBeNull();
+
+  await page.getByRole('button', { name: 'Save draft' }).click();
+  await expect
+    .poll(() => savedCaseStudy)
+    .toMatchObject({
+      context: 'Reviewed generated context',
+      problem: 'Generated problem',
+      role: 'Generated role',
+      approach: 'Generated approach',
+      responsibilities: ['Generated responsibility'],
+      isPublic: false,
+    });
+});

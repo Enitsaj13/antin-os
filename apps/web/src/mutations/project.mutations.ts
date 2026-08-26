@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type {
+  CreateCaseStudyDraftInput,
   CreateProjectCaseStudyInput,
   CreateProjectInput,
   UpdateProjectCaseStudyInput,
@@ -11,6 +12,7 @@ import {
   createProject,
   deleteProjectCaseStudy,
   deleteProject,
+  generateProjectCaseStudyDraft,
   updateProjectCaseStudy,
   updateProjectCaseStudyPublication,
   updateProject,
@@ -61,6 +63,18 @@ export function useDeleteProjectMutation() {
 export function useUploadProjectImageMutation() {
   return useMutation({
     mutationFn: uploadProjectImage,
+  });
+}
+
+export function useGenerateProjectCaseStudyDraftMutation() {
+  return useMutation({
+    mutationFn: ({
+      projectId,
+      input,
+    }: {
+      projectId: string;
+      input: CreateCaseStudyDraftInput;
+    }) => generateProjectCaseStudyDraft(projectId, input),
   });
 }
 

@@ -135,7 +135,9 @@ function ProjectCaseStudySection({
         <CaseStudyTextSection title="Problem">
           {caseStudy.problem}
         </CaseStudyTextSection>
-        <CaseStudyTextSection title="Role">{caseStudy.role}</CaseStudyTextSection>
+        <CaseStudyTextSection title="Role">
+          {caseStudy.role}
+        </CaseStudyTextSection>
         <CaseStudyTextSection title="Approach">
           {caseStudy.approach}
         </CaseStudyTextSection>

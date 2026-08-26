@@ -9,9 +9,13 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
-import type { ProjectImageUpload } from '@antin-os/shared';
+import type {
+  CaseStudyDraftResponse,
+  ProjectImageUpload,
+} from '@antin-os/shared';
 import type { ProjectCaseStudy } from '@antin-os/shared';
 import { OwnerAuthGuard } from '@src/auth/owner-auth.guard';
+import { CreateCaseStudyDraftDto } from './dto/create-case-study-draft.dto';
 import { CreateProjectCaseStudyDto } from './dto/create-project-case-study.dto';
 import { CreateProjectImageUploadDto } from './dto/create-project-image-upload.dto';
 import { CreateProjectDto } from './dto/create-project.dto';
@@ -35,6 +39,10 @@ type ProjectsOperations = {
     projectId: string,
     dto: CreateProjectCaseStudyDto,
   ): Promise<ProjectCaseStudy>;
+  createCaseStudyDraft(
+    projectId: string,
+    dto: CreateCaseStudyDraftDto,
+  ): Promise<CaseStudyDraftResponse>;
   updateCaseStudy(
     projectId: string,
     dto: UpdateProjectCaseStudyDto,
@@ -111,6 +119,15 @@ export class ProjectsController {
     @Body() dto: CreateProjectCaseStudyDto,
   ): Promise<ProjectCaseStudy> {
     return this.projectsService.createCaseStudy(projectId, dto);
+  }
+
+  @Post('projects/:projectId/case-study/draft')
+  @UseGuards(OwnerAuthGuard)
+  createCaseStudyDraft(
+    @Param('projectId') projectId: string,
+    @Body() dto: CreateCaseStudyDraftDto,
+  ): Promise<CaseStudyDraftResponse> {
+    return this.projectsService.createCaseStudyDraft(projectId, dto);
   }
 
   @Patch('projects/:projectId/case-study')
