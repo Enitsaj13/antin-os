@@ -191,10 +191,29 @@ make prisma-generate
 make db-studio
 ```
 
-Dangerous local reset:
+Create or restore a local database backup:
+
+```bash
+make backup-db
+make restore-db backup=latest confirm=1
+```
+
+Backups are full custom-format PostgreSQL archives stored under
+`.backups/postgres/`. They are ignored by Git and may contain sensitive data.
+Stop local API and web processes before restoring a backup.
+
+Local reset automatically creates a timestamped backup before deleting the
+Docker volume and rerunning migrations:
 
 ```bash
 make reset-db confirm=1
+```
+
+Only when the current database cannot start or be backed up, bypass that safety
+step explicitly:
+
+```bash
+make reset-db confirm=1 skip_backup=1
 ```
 
 ## Quality Gates

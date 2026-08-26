@@ -40,6 +40,8 @@ Database and E2E helpers expect the local backing services from `make up`:
 ```bash
 make db-wait            # wait until Postgres is ready
 make migrate            # apply Prisma migrations
+make backup-db          # create a timestamped local database backup
+make restore-db backup=latest confirm=1 # restore the newest local backup
 make db-studio          # open Prisma Studio
 make e2e                # Playwright browser smoke tests
 make e2e-api            # API E2E tests

@@ -4,6 +4,7 @@ DOCKER_ENV_EXAMPLE := .env.docker.example
 DOCKER_COMPOSE := docker compose --env-file $(DOCKER_ENV)
 API_ENV := apps/api/.env
 API_ENV_EXAMPLE := apps/api/.env.example
+DB_BACKUP_DIR ?= .backups/postgres
 PLAYWRIGHT_SLOW_MO ?= 300
 
 .DEFAULT_GOAL := help
@@ -21,7 +22,9 @@ help:
 	@echo "  make down             Stop/remove local containers"
 	@echo "  make logs             Follow container logs"
 	@echo "  make db-wait          Wait until Postgres is ready"
-	@echo "  make reset-db         Wipe local DB volume and rerun migrations; requires confirm=1"
+	@echo "  make backup-db        Create a timestamped local Postgres backup"
+	@echo "  make restore-db       Restore a backup; requires backup=<path|latest> confirm=1"
+	@echo "  make reset-db         Back up, wipe local DB, and rerun migrations; requires confirm=1"
 	@echo "  make docker-build     Build API and web production images"
 	@echo "  make docker-up        Start Postgres, API, and web containers"
 	@echo "  make docker-migrate   Run Prisma migrate deploy in a one-off container"
@@ -105,9 +108,67 @@ db-wait:
 	done
 	@echo "Postgres is ready."
 
+.PHONY: backup-db
+backup-db: docker-env
+	$(DOCKER_COMPOSE) up -d postgres
+	$(MAKE) db-wait
+	@set -eu; \
+		umask 077; \
+		mkdir -p "$(DB_BACKUP_DIR)"; \
+		timestamp=$$(date +%Y%m%d_%H%M%S); \
+		backup_path="$(DB_BACKUP_DIR)/antin_os_$${timestamp}.dump"; \
+		temp_path="$${backup_path}.tmp"; \
+		if [ -e "$$backup_path" ] || [ -e "$$temp_path" ]; then \
+			echo "Backup path already exists: $$backup_path"; \
+			exit 1; \
+		fi; \
+		trap 'rm -f "$$temp_path"' 0 1 2 15; \
+		$(DOCKER_COMPOSE) exec -T postgres sh -eu -c \
+			'pg_dump --format=custom --no-owner --no-privileges --username="$$POSTGRES_USER" --dbname="$$POSTGRES_DB"' \
+			> "$$temp_path"; \
+		test -s "$$temp_path"; \
+		$(DOCKER_COMPOSE) exec -T postgres pg_restore --list < "$$temp_path" >/dev/null; \
+		mv "$$temp_path" "$$backup_path"; \
+		trap - 0 1 2 15; \
+		echo "Database backup created: $$(pwd)/$$backup_path"
+
+.PHONY: restore-db
+restore-db: docker-env
+	@test "$(confirm)" = "1" || (echo "Usage: make restore-db backup=<path|latest> confirm=1" && exit 1)
+	@test -n "$(backup)" || (echo "Usage: make restore-db backup=<path|latest> confirm=1" && exit 1)
+	$(DOCKER_COMPOSE) up -d postgres
+	$(MAKE) db-wait
+	@set -eu; \
+		backup_path="$(backup)"; \
+		if [ "$$backup_path" = "latest" ]; then \
+			backup_path=$$(ls -1t "$(DB_BACKUP_DIR)"/*.dump 2>/dev/null | head -n 1 || true); \
+		fi; \
+		if [ -z "$$backup_path" ] || [ ! -f "$$backup_path" ]; then \
+			echo "Backup not found: $(backup)"; \
+			exit 1; \
+		fi; \
+		echo "Validating database backup: $$backup_path"; \
+		$(DOCKER_COMPOSE) exec -T postgres pg_restore --list < "$$backup_path" >/dev/null; \
+		echo "Replacing the local database from: $$backup_path"; \
+		$(DOCKER_COMPOSE) exec -T postgres sh -eu -c \
+			'dropdb --if-exists --force --username="$$POSTGRES_USER" "$$POSTGRES_DB"; \
+			createdb --template=template0 --owner="$$POSTGRES_USER" --username="$$POSTGRES_USER" "$$POSTGRES_DB"'; \
+		$(DOCKER_COMPOSE) exec -T postgres sh -eu -c \
+			'pg_restore --exit-on-error --single-transaction --no-owner --no-privileges \
+			--username="$$POSTGRES_USER" --dbname="$$POSTGRES_DB"' \
+			< "$$backup_path"; \
+		echo "Database archive restored: $$backup_path"
+	$(MAKE) migrate
+	@echo "Database restore complete."
+
 .PHONY: reset-db
 reset-db: docker-env
 	@test "$(confirm)" = "1" || (echo "Usage: make reset-db confirm=1" && exit 1)
+	@if [ "$(skip_backup)" = "1" ]; then \
+		echo "WARNING: skipping the automatic pre-reset database backup."; \
+	else \
+		$(MAKE) backup-db; \
+	fi
 	$(DOCKER_COMPOSE) down -v
 	$(DOCKER_COMPOSE) up -d postgres
 	$(MAKE) db-wait

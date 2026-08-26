@@ -18,6 +18,9 @@ make up               # start local Postgres
 make down             # stop/remove local containers
 make logs             # follow container logs
 make db-wait          # wait until Postgres is ready
+make backup-db        # write a timestamped backup under .backups/postgres
+make restore-db backup=latest confirm=1 # replace local DB with newest backup
+make reset-db confirm=1 # back up, wipe local DB, and rerun migrations
 make docker-build     # build API and web production images
 make docker-up        # start Postgres + API + web containers
 make docker-migrate   # run prisma migrate deploy once
@@ -56,6 +59,39 @@ For real OpenAI drafting, use `AI_PROVIDER=openai` only with server-side
 `OPENAI_API_KEY` and `OPENAI_MODEL` configured.
 
 Docker setup and runtime configuration: [Docker Development](docker.md).
+
+## Local Database Backups
+
+Create a full custom-format PostgreSQL archive:
+
+```bash
+make backup-db
+```
+
+Backups are written to `.backups/postgres/` with timestamped filenames and are
+ignored by Git. They contain the full local database, may contain sensitive
+personal data, and should not be committed or shared.
+
+Restore the newest backup or a specific archive:
+
+```bash
+make restore-db backup=latest confirm=1
+make restore-db backup=.backups/postgres/antin_os_YYYYMMDD_HHMMSS.dump confirm=1
+```
+
+Restore validates the archive before replacing the local database, then applies
+any newer Prisma migrations. Stop local API and web development processes first
+so they do not reconnect while the database is being replaced.
+
+Every destructive reset creates a backup before removing the Docker volume:
+
+```bash
+make reset-db confirm=1
+```
+
+If PostgreSQL is too damaged to start or back up, explicitly bypass the safety
+step with `make reset-db confirm=1 skip_backup=1`. This permanently deletes the
+local database without creating a recovery archive.
 
 ## Quality
 

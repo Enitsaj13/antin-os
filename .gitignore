@@ -33,3 +33,6 @@ yarn-error.log*
 # temp
 .temp/
 .tmp/
+
+# local database backups
+.backups/
