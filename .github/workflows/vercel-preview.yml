@@ -9,7 +9,7 @@ on:
       - 'package.json'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
-      - 'vercel.ts'
+      - 'vercel.json'
 
 concurrency:
   group: vercel-preview-${{ github.event.pull_request.number }}

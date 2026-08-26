@@ -168,7 +168,7 @@ runs `prisma migrate deploy` as the controlled release job before rollout.
 
 ## Vercel Web
 
-Vercel uses `vercel.ts` to build `apps/web` and route traffic:
+Vercel uses `vercel.json` to build `apps/web` and route traffic:
 
 ```text
 /api/:path*  ->  Render API

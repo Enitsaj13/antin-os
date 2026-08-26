@@ -115,7 +115,7 @@ packages/api-client/**
 package.json
 pnpm-lock.yaml
 pnpm-workspace.yaml
-vercel.ts
+vercel.json
 ```
 
 Preview deployments use the same `/api` rewrite as production but do not pass

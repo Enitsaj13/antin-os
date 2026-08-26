@@ -20,7 +20,7 @@ Compose and future self-hosting.
 
 ## Vercel Frontend
 
-Vercel deploys `apps/web` from the repository root using `vercel.ts`.
+Vercel deploys `apps/web` from the repository root using `vercel.json`.
 
 Required Vercel production configuration:
 
@@ -43,7 +43,7 @@ database URLs, AWS credentials, OpenAI keys, session secrets, admin password
 hashes, or Render deploy hooks in Vercel. Do not create `VITE_*` variables for
 server secrets.
 
-`vercel.ts` handles:
+`vercel.json` handles:
 
 ```text
 /api/:path*  ->  $RENDER_API_ORIGIN/:path*

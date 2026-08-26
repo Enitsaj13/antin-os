@@ -253,7 +253,7 @@ jobs:
         run: |
           changed_files="$(git diff --name-only HEAD^ HEAD || git show --name-only --pretty=format: HEAD)"
 
-          if printf '%s\n' "$changed_files" | grep -Eq '^(apps/web/|packages/shared/|packages/api-client/|package.json|pnpm-lock.yaml|pnpm-workspace.yaml|vercel.ts)'; then
+          if printf '%s\n' "$changed_files" | grep -Eq '^(apps/web/|packages/shared/|packages/api-client/|package.json|pnpm-lock.yaml|pnpm-workspace.yaml|vercel\.json)'; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"
