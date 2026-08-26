@@ -1917,7 +1917,11 @@ describe('projects admin list', () => {
 
     mockProfileHooks();
     mockProjectHooks([firstProject, hiddenProject, secondProject]);
-    reorderProjects.mockResolvedValue([secondProject, hiddenProject, firstProject]);
+    reorderProjects.mockResolvedValue([
+      secondProject,
+      hiddenProject,
+      firstProject,
+    ]);
 
     renderApp('/admin/projects');
 

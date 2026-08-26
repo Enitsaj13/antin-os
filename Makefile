@@ -1,5 +1,7 @@
 PNPM := pnpm
-DOCKER_COMPOSE := docker compose
+DOCKER_ENV := .env.docker
+DOCKER_ENV_EXAMPLE := .env.docker.example
+DOCKER_COMPOSE := docker compose --env-file $(DOCKER_ENV)
 API_ENV := apps/api/.env
 API_ENV_EXAMPLE := apps/api/.env.example
 PLAYWRIGHT_SLOW_MO ?= 300
@@ -20,6 +22,11 @@ help:
 	@echo "  make logs             Follow container logs"
 	@echo "  make db-wait          Wait until Postgres is ready"
 	@echo "  make reset-db         Wipe local DB volume and rerun migrations; requires confirm=1"
+	@echo "  make docker-build     Build API and web production images"
+	@echo "  make docker-up        Start Postgres, API, and web containers"
+	@echo "  make docker-migrate   Run Prisma migrate deploy in a one-off container"
+	@echo "  make docker-down      Stop/remove the containerized stack"
+	@echo "  make docker-logs      Follow full-stack container logs"
 	@echo ""
 	@echo "Development"
 	@echo "  make dev              Start API and web dev servers"
@@ -55,9 +62,14 @@ help:
 .PHONY: init
 init:
 	@if [ ! -f "$(API_ENV)" ]; then cp "$(API_ENV_EXAMPLE)" "$(API_ENV)"; fi
+	@if [ ! -f "$(DOCKER_ENV)" ]; then cp "$(DOCKER_ENV_EXAMPLE)" "$(DOCKER_ENV)"; fi
 	$(PNPM) install
 	$(PNPM) exec playwright install chromium
 	$(PNPM) exec simple-git-hooks
+
+.PHONY: docker-env
+docker-env:
+	@if [ ! -f "$(DOCKER_ENV)" ]; then cp "$(DOCKER_ENV_EXAMPLE)" "$(DOCKER_ENV)"; fi
 
 .PHONY: install
 install:
@@ -74,7 +86,7 @@ clean: clean-artifacts
 	rm -rf node_modules apps/*/node_modules packages/*/node_modules
 
 .PHONY: up
-up:
+up: docker-env
 	$(DOCKER_COMPOSE) up -d postgres
 
 .PHONY: down
@@ -94,12 +106,32 @@ db-wait:
 	@echo "Postgres is ready."
 
 .PHONY: reset-db
-reset-db:
+reset-db: docker-env
 	@test "$(confirm)" = "1" || (echo "Usage: make reset-db confirm=1" && exit 1)
 	$(DOCKER_COMPOSE) down -v
 	$(DOCKER_COMPOSE) up -d postgres
 	$(MAKE) db-wait
 	$(MAKE) migrate
+
+.PHONY: docker-build
+docker-build: docker-env
+	$(DOCKER_COMPOSE) build api web
+
+.PHONY: docker-up
+docker-up: docker-env
+	$(DOCKER_COMPOSE) up -d postgres api web
+
+.PHONY: docker-migrate
+docker-migrate: docker-env
+	$(DOCKER_COMPOSE) --profile release run --rm api-migrate
+
+.PHONY: docker-down
+docker-down:
+	$(DOCKER_COMPOSE) down
+
+.PHONY: docker-logs
+docker-logs:
+	$(DOCKER_COMPOSE) logs -f postgres api web
 
 .PHONY: migrate
 migrate:

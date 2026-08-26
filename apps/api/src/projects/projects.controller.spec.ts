@@ -351,7 +351,9 @@ describe('ProjectsController', () => {
       })
       .expect(200);
 
-    expect(response.body.map((item: { id: string }) => item.id)).toEqual([
+    const responseBody = response.body as Array<{ id: string }>;
+
+    expect(responseBody.map((item) => item.id)).toEqual([
       'project-2',
       'project-1',
     ]);
@@ -589,17 +591,15 @@ describe('ProjectsController', () => {
       slug: 'antin-os',
       isPublic: true,
     });
-    expect(prisma.project.findMany).toHaveBeenCalledWith(
-      {
-        where: { isPublic: true },
-        orderBy: [
-          { displayOrder: 'asc' },
-          { createdAt: 'desc' },
-          { updatedAt: 'desc' },
-        ],
-        select: projectSelect,
-      },
-    );
+    expect(prisma.project.findMany).toHaveBeenCalledWith({
+      where: { isPublic: true },
+      orderBy: [
+        { displayOrder: 'asc' },
+        { createdAt: 'desc' },
+        { updatedAt: 'desc' },
+      ],
+      select: projectSelect,
+    });
     expect(prisma.project.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { slug: 'antin-os', isPublic: true },

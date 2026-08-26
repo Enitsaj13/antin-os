@@ -45,7 +45,7 @@ function openAiErrorDetails(error: unknown): Record<string, string> {
     message:
       error instanceof Error
         ? error.message.slice(0, 500)
-        : safeLogValue(error) ?? 'Unknown OpenAI provider error',
+        : (safeLogValue(error) ?? 'Unknown OpenAI provider error'),
   };
 }
 

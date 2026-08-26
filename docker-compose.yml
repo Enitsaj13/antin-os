@@ -1,16 +1,112 @@
 services:
   postgres:
-    image: postgres:16
+    image: postgres:16-alpine
     container_name: antin_os_postgres
     restart: unless-stopped
     ports:
-      - '5432:5432'
+      - '${POSTGRES_PORT:-5432}:5432'
     environment:
-      POSTGRES_USER: antin
-      POSTGRES_PASSWORD: antin_password
-      POSTGRES_DB: antin_os
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env.docker}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.docker}
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env.docker}
     volumes:
       - antin_os_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  api:
+    image: antin-os-api:local
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: antin_os_api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - '${API_PORT:-3001}:3001'
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 3001
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env.docker}
+      CORS_ORIGIN: ${CORS_ORIGIN:?Set CORS_ORIGIN in .env.docker}
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-}
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:-}
+      AUTH_SESSION_SECRET: ${AUTH_SESSION_SECRET:-}
+      AUTH_SESSION_TTL_SECONDS: ${AUTH_SESSION_TTL_SECONDS:-86400}
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
+      AUTH_LOGIN_RATE_LIMIT_MAX: ${AUTH_LOGIN_RATE_LIMIT_MAX:-5}
+      AUTH_LOGIN_RATE_LIMIT_WINDOW_SECONDS: ${AUTH_LOGIN_RATE_LIMIT_WINDOW_SECONDS:-300}
+      AWS_REGION: ${AWS_REGION:-}
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_S3_PUBLIC_BASE_URL: ${AWS_S3_PUBLIC_BASE_URL:-}
+      AWS_S3_PRESIGNED_URL_TTL_SECONDS: ${AWS_S3_PRESIGNED_URL_TTL_SECONDS:-900}
+      RESUME_MAX_UPLOAD_BYTES: ${RESUME_MAX_UPLOAD_BYTES:-5242880}
+      AI_DRAFTING_ENABLED: ${AI_DRAFTING_ENABLED:-true}
+      AI_PROVIDER: ${AI_PROVIDER:-mock}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+      AI_DRAFT_TIMEOUT_MS: ${AI_DRAFT_TIMEOUT_MS:-30000}
+      AI_DRAFT_RATE_LIMIT: ${AI_DRAFT_RATE_LIMIT:-5/60}
+      AI_DRAFT_USAGE_LIMIT: ${AI_DRAFT_USAGE_LIMIT:-25/86400}
+      AI_DRAFT_MAX_NOTES_LENGTH: ${AI_DRAFT_MAX_NOTES_LENGTH:-2000}
+      AI_DRAFT_MAX_OUTPUT_TOKENS: ${AI_DRAFT_MAX_OUTPUT_TOKENS:-1200}
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'node -e "fetch(''http://127.0.0.1:3001/health'').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"',
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  web:
+    image: antin-os-web:local
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        VITE_API_BASE_URL: ${WEB_API_BASE_URL:-http://localhost:3001}
+    container_name: antin_os_web
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - '${WEB_PORT:-5173}:8080'
+    environment:
+      WEB_API_BASE_URL: ${WEB_API_BASE_URL:-http://localhost:3001}
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'wget -qO- http://127.0.0.1:8080/health >/dev/null || exit 1',
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  api-migrate:
+    image: antin-os-api:local
+    profiles: ['release']
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env.docker}
+    command: ['./node_modules/.bin/prisma', 'migrate', 'deploy']
 
 volumes:
   antin_os_pgdata:

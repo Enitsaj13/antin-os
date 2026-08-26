@@ -15,6 +15,8 @@
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
+    "prisma": "prisma",
+    "migrate:deploy": "prisma migrate deploy",
     "seed:portfolio": "node prisma/seed-portfolio-projects.mjs",
     "auth:hash-password": "node scripts/hash-admin-password.mjs",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",

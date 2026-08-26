@@ -30,7 +30,9 @@ export function getProject(idOrSlug: string): Promise<Project> {
   return requestJson<Project>(`/projects/${encodeURIComponent(idOrSlug)}`);
 }
 
-export function reorderProjects(input: ReorderProjectInput): Promise<Project[]> {
+export function reorderProjects(
+  input: ReorderProjectInput,
+): Promise<Project[]> {
   return requestJson<Project[]>('/projects/reorder', {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
