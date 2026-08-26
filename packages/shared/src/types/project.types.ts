@@ -10,6 +10,7 @@ export interface Project {
   imageUrl: string | null;
   imageKey: string | null;
   isPublic: boolean;
+  displayOrder: number;
   createdAt: string;
   updatedAt: string;
   caseStudy?: ProjectCaseStudy | null;
@@ -90,6 +91,15 @@ export interface CreateProjectInput {
 }
 
 export type UpdateProjectInput = Partial<CreateProjectInput>;
+
+export interface ReorderProjectItem {
+  id: string;
+  displayOrder: number;
+}
+
+export interface ReorderProjectInput {
+  items: ReorderProjectItem[];
+}
 
 export interface CreateProjectImageUploadInput {
   fileName: string;

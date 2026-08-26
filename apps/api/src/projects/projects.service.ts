@@ -30,6 +30,7 @@ import { CreateCaseStudyDraftDto } from './dto/create-case-study-draft.dto';
 import { CreateProjectCaseStudyDto } from './dto/create-project-case-study.dto';
 import { CreateProjectImageUploadDto } from './dto/create-project-image-upload.dto';
 import { CreateProjectDto } from './dto/create-project.dto';
+import { ReorderProjectsDto } from './dto/reorder-projects.dto';
 import { UpdateProjectCaseStudyPublicationDto } from './dto/update-project-case-study-publication.dto';
 import { UpdateProjectCaseStudyDto } from './dto/update-project-case-study.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
@@ -58,6 +59,7 @@ type ProjectCreateData = Pick<
   | 'imageUrl'
   | 'imageKey'
   | 'isPublic'
+  | 'displayOrder'
 >;
 
 type ProjectUpdateData = Partial<ProjectCreateData>;
@@ -80,6 +82,12 @@ type ProjectCaseStudyUpdateData = Partial<
   Omit<ProjectCaseStudyCreateData, 'projectId'>
 >;
 
+const PROJECT_ORDER = [
+  { displayOrder: 'asc' },
+  { createdAt: 'desc' },
+  { updatedAt: 'desc' },
+] satisfies Prisma.ProjectOrderByWithRelationInput[];
+
 @Injectable()
 export class ProjectsService {
   private readonly logger = new Logger(ProjectsService.name);
@@ -96,6 +104,8 @@ export class ProjectsService {
   ) {}
 
   async create(dto: CreateProjectDto): Promise<ProjectResponse> {
+    const nextDisplayOrder = await this.nextDisplayOrder();
+
     try {
       const project = await this.prisma.project.create({
         data: {
@@ -110,6 +120,7 @@ export class ProjectsService {
 
           imageKey: dto.imageKey,
           isPublic: dto.isPublic ?? false,
+          displayOrder: nextDisplayOrder,
         } satisfies ProjectCreateData,
         select: projectSelect,
       });
@@ -122,7 +133,7 @@ export class ProjectsService {
 
   async findAllManaged(): Promise<ProjectResponse[]> {
     const projects = await this.prisma.project.findMany({
-      orderBy: { createdAt: 'desc' },
+      orderBy: PROJECT_ORDER,
       select: projectSelect,
     });
 
@@ -187,6 +198,36 @@ export class ProjectsService {
     return toProjectResponse(project);
   }
 
+  async reorder(dto: ReorderProjectsDto): Promise<ProjectResponse[]> {
+    const ids = dto.items.map((item) => item.id);
+    const uniqueIds = new Set(ids);
+
+    if (uniqueIds.size !== ids.length) {
+      throw new BadRequestException('Project ids must be unique');
+    }
+
+    const existing = await this.prisma.project.findMany({
+      where: { id: { in: ids } },
+      select: { id: true },
+    });
+
+    if (existing.length !== ids.length) {
+      throw new BadRequestException('Project reorder includes unknown ids');
+    }
+
+    await this.prisma.$transaction(
+      dto.items.map((item) =>
+        this.prisma.project.update({
+          where: { id: item.id },
+          data: { displayOrder: item.displayOrder },
+          select: { id: true },
+        }),
+      ),
+    );
+
+    return this.findAllManaged();
+  }
+
   createImageUpload(
     dto: CreateProjectImageUploadDto,
   ): Promise<ProjectImageUpload> {
@@ -199,7 +240,7 @@ export class ProjectsService {
   async findAllPublic(): Promise<ProjectResponse[]> {
     const projects = await this.prisma.project.findMany({
       where: { isPublic: true },
-      orderBy: { createdAt: 'desc' },
+      orderBy: PROJECT_ORDER,
       select: projectSelect,
     });
 
@@ -420,6 +461,14 @@ export class ProjectsService {
     if (!existing) {
       throw new NotFoundException('Project not found');
     }
+  }
+
+  private async nextDisplayOrder(): Promise<number> {
+    const result = await this.prisma.project.aggregate({
+      _max: { displayOrder: true },
+    });
+
+    return (result._max.displayOrder ?? -1) + 1;
   }
 
   private requireProject(

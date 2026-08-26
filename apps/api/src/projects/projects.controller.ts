@@ -19,6 +19,7 @@ import { CreateCaseStudyDraftDto } from './dto/create-case-study-draft.dto';
 import { CreateProjectCaseStudyDto } from './dto/create-project-case-study.dto';
 import { CreateProjectImageUploadDto } from './dto/create-project-image-upload.dto';
 import { CreateProjectDto } from './dto/create-project.dto';
+import { ReorderProjectsDto } from './dto/reorder-projects.dto';
 import { UpdateProjectCaseStudyPublicationDto } from './dto/update-project-case-study-publication.dto';
 import { UpdateProjectCaseStudyDto } from './dto/update-project-case-study.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
@@ -31,6 +32,7 @@ type ProjectsOperations = {
   findManaged(idOrSlug: string): Promise<ProjectResponse>;
   update(id: string, dto: UpdateProjectDto): Promise<ProjectResponse>;
   remove(id: string): Promise<ProjectResponse>;
+  reorder(dto: ReorderProjectsDto): Promise<ProjectResponse[]>;
   createImageUpload(
     dto: CreateProjectImageUploadDto,
   ): Promise<ProjectImageUpload>;
@@ -73,6 +75,12 @@ export class ProjectsController {
   @UseGuards(OwnerAuthGuard)
   findAllManaged(): Promise<ProjectResponse[]> {
     return this.projectsService.findAllManaged();
+  }
+
+  @Patch('projects/reorder')
+  @UseGuards(OwnerAuthGuard)
+  reorder(@Body() dto: ReorderProjectsDto): Promise<ProjectResponse[]> {
+    return this.projectsService.reorder(dto);
   }
 
   @Get('projects/:idOrSlug')

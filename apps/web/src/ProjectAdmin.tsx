@@ -31,6 +31,7 @@ import {
   useDeleteProjectCaseStudyMutation,
   useDeleteProjectMutation,
   useGenerateProjectCaseStudyDraftMutation,
+  useReorderProjectsMutation,
   useUpdateProjectCaseStudyMutation,
   useUpdateProjectCaseStudyPublicationMutation,
   useUpdateProjectMutation,
@@ -498,7 +499,10 @@ export function ProjectsAdmin({ onNavigate }: { onNavigate: Navigate }) {
   const [deleteError, setDeleteError] = useState('');
   const projectsQuery = useProjects();
   const deleteProjectMutation = useDeleteProjectMutation();
+  const reorderProjectsMutation = useReorderProjectsMutation();
+  const [listError, setListError] = useState('');
   const projects = projectsQuery.data ?? [];
+  const isReordering = reorderProjectsMutation.isPending;
 
   const filteredProjects = useMemo(() => {
     if (filter === 'public') {
@@ -524,6 +528,55 @@ export function ProjectsAdmin({ onNavigate }: { onNavigate: Navigate }) {
       setProjectToDelete(null);
     } catch (error) {
       setDeleteError(errorMessage(error, 'Project deletion failed.'));
+    }
+  }
+
+  async function moveProject(project: Project, direction: -1 | 1) {
+    if (isReordering) {
+      return;
+    }
+
+    const currentIndex = filteredProjects.findIndex(
+      (candidate) => candidate.id === project.id,
+    );
+    const nextIndex = currentIndex + direction;
+    const targetProject = filteredProjects[nextIndex];
+
+    if (currentIndex < 0 || !targetProject) {
+      return;
+    }
+
+    const reordered = [...projects];
+    const currentFullIndex = reordered.findIndex(
+      (candidate) => candidate.id === project.id,
+    );
+
+    if (currentFullIndex < 0) {
+      return;
+    }
+
+    const [movedProject] = reordered.splice(currentFullIndex, 1);
+    const targetFullIndex = reordered.findIndex(
+      (candidate) => candidate.id === targetProject.id,
+    );
+
+    if (targetFullIndex < 0) {
+      return;
+    }
+
+    const insertIndex = direction > 0 ? targetFullIndex + 1 : targetFullIndex;
+    reordered.splice(insertIndex, 0, movedProject);
+    setListError('');
+
+    try {
+      await reorderProjectsMutation.mutateAsync({
+        items: reordered.map((item, index) => ({
+          id: item.id,
+          displayOrder: index,
+        })),
+      });
+    } catch (error) {
+      setListError(errorMessage(error, 'Project reorder failed.'));
     }
   }
 
@@ -591,6 +644,12 @@ export function ProjectsAdmin({ onNavigate }: { onNavigate: Navigate }) {
         </div>
       ) : null}
 
+      {listError ? (
+        <p className="m-0 mb-4 text-red-700" role="alert">
+          {listError}
+        </p>
+      ) : null}
+
       {!projectsQuery.isLoading && !projectsQuery.isError ? (
         filteredProjects.length > 0 ? (
           <div className="overflow-x-auto">
@@ -601,12 +660,13 @@ export function ProjectsAdmin({ onNavigate }: { onNavigate: Navigate }) {
                   <th className="py-2 pr-3">Slug</th>
                   <th className="py-2 pr-3">Tech stack</th>
                   <th className="py-2 pr-3">State</th>
+                  <th className="py-2 pr-3">Order</th>
                   <th className="py-2 pr-3">Updated</th>
                   <th className="py-2 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredProjects.map((project) => (
+                {filteredProjects.map((project, index) => (
                   <tr className="border-b border-slate-200" key={project.id}>
                     <td className="py-3 pr-3 font-medium">{project.title}</td>
                     <td className="py-3 pr-3">{project.slug}</td>
@@ -616,11 +676,33 @@ export function ProjectsAdmin({ onNavigate }: { onNavigate: Navigate }) {
                     <td className="py-3 pr-3">
                       {project.isPublic ? 'Public' : 'Private'}
                     </td>
+                    <td className="py-3 pr-3">{project.displayOrder}</td>
                     <td className="py-3 pr-3">
                       {formatDate(project.updatedAt)}
                     </td>
                     <td className="py-3">
-                      <div className="flex justify-end gap-2">
+                      <div className="flex flex-wrap justify-end gap-2">
+                        <button
+                          className={BUTTON_CLASS}
+                          type="button"
+                          aria-label={`Move ${project.title} up`}
+                          disabled={index === 0 || isReordering}
+                          onClick={() => void moveProject(project, -1)}
+                        >
+                          <ArrowUp size={16} aria-hidden="true" />
+                        </button>
+                        <button
+                          className={BUTTON_CLASS}
+                          type="button"
+                          aria-label={`Move ${project.title} down`}
+                          disabled={
+                            index === filteredProjects.length - 1 ||
+                            isReordering
+                          }
+                          onClick={() => void moveProject(project, 1)}
+                        >
+                          <ArrowDown size={16} aria-hidden="true" />
+                        </button>
                         <button
                           className={BUTTON_CLASS}
                           type="button"
@@ -663,7 +745,7 @@ export function ProjectsAdmin({ onNavigate }: { onNavigate: Navigate }) {
             </table>
 
             <div className="grid gap-3 md:hidden">
-              {filteredProjects.map((project) => (
+              {filteredProjects.map((project, index) => (
                 <article
                   className="grid gap-2 border border-slate-300 p-3"
                   key={project.id}
@@ -680,10 +762,33 @@ export function ProjectsAdmin({ onNavigate }: { onNavigate: Navigate }) {
                   <p className="m-0">
                     State: {project.isPublic ? 'Public' : 'Private'}
                   </p>
+                  <p className="m-0">Order: {project.displayOrder}</p>
                   <p className="m-0">
                     Updated: {formatDate(project.updatedAt)}
                   </p>
                   <div className="flex flex-wrap gap-2">
+                    <button
+                      className={BUTTON_CLASS}
+                      type="button"
+                      aria-label={`Move ${project.title} up`}
+                      disabled={index === 0 || isReordering}
+                      onClick={() => void moveProject(project, -1)}
+                    >
+                      <ArrowUp size={16} aria-hidden="true" />
+                      Up
+                    </button>
+                    <button
+                      className={BUTTON_CLASS}
+                      type="button"
+                      aria-label={`Move ${project.title} down`}
+                      disabled={
+                        index === filteredProjects.length - 1 || isReordering
+                      }
+                      onClick={() => void moveProject(project, 1)}
+                    >
+                      <ArrowDown size={16} aria-hidden="true" />
+                      Down
+                    </button>
                     <button
                       className={BUTTON_CLASS}
                       type="button"

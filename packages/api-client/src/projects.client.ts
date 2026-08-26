@@ -6,6 +6,7 @@ import type {
   ProjectImageUpload,
   Project,
   ProjectCaseStudy,
+  ReorderProjectInput,
   UpdateProjectCaseStudyInput,
   UpdateProjectCaseStudyPublicationInput,
   UpdateProjectInput,
@@ -27,6 +28,14 @@ export function getProjects(): Promise<Project[]> {
 
 export function getProject(idOrSlug: string): Promise<Project> {
   return requestJson<Project>(`/projects/${encodeURIComponent(idOrSlug)}`);
+}
+
+export function reorderProjects(input: ReorderProjectInput): Promise<Project[]> {
+  return requestJson<Project[]>('/projects/reorder', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
 }
 
 export function getProjectCaseStudy(

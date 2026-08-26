@@ -72,6 +72,7 @@ The system SHALL provide public retrieval behavior for published portfolio proje
 #### Scenario: List public projects
 - **WHEN** `GET /public/projects` is requested
 - **THEN** the system returns only projects marked as public
+- **AND** the projects are ordered by configured display order
 
 #### Scenario: Read public project by slug
 - **WHEN** `GET /public/projects/:slug` is requested with a lowercase kebab-case slug assigned to a public project
@@ -116,11 +117,23 @@ The system SHALL provide a projects management list that supports scanning, filt
 
 #### Scenario: Display project rows
 - **WHEN** managed projects load successfully
-- **THEN** the system displays each project's title, slug, tech stack, publication state, and updated date
+- **THEN** the system displays each project's title, slug, tech stack, publication state, display order, and updated date
 
 #### Scenario: Provide row actions
 - **WHEN** a project appears in the management list
-- **THEN** the system provides Edit and Delete actions for that project
+- **THEN** the system provides Edit, reorder, and Delete actions for that project
+
+#### Scenario: Reorder managed projects
+- **WHEN** the owner moves a project up or down in the management list
+- **THEN** the system persists the requested display order and refreshes project list data
+
+#### Scenario: Prevent duplicate reorder submissions
+- **WHEN** a project reorder request is pending
+- **THEN** the system disables reorder controls until the request completes
+
+#### Scenario: Recover from reorder failure
+- **WHEN** a project reorder request fails
+- **THEN** the system keeps the projects visible and displays the API error
 
 #### Scenario: Show loading state
 - **WHEN** the projects list is loading
@@ -713,4 +726,3 @@ The system SHALL provide an authenticated admin review flow that lets the owner 
 #### Scenario: Display generation states
 - **WHEN** the AI draft flow is pending, disabled, missing configuration, rate-limited, usage-limited, timed out, receives a malformed response, fails because of a provider error, or can be retried
 - **THEN** the admin UI displays an accessible state with recovery guidance where applicable
-

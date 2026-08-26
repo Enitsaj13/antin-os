@@ -24,7 +24,9 @@ import {
 } from './storage/project-image-storage';
 
 type MockPrismaService = {
+  $transaction: jest.Mock;
   project: {
+    aggregate: jest.Mock;
     create: jest.Mock;
     findMany: jest.Mock;
     findFirst: jest.Mock;
@@ -50,7 +52,9 @@ type MockCaseStudyDraftProvider = {
 
 function createMockPrisma(): MockPrismaService {
   return {
+    $transaction: jest.fn(),
     project: {
+      aggregate: jest.fn(),
       create: jest.fn(),
       findMany: jest.fn(),
       findFirst: jest.fn(),
@@ -109,6 +113,7 @@ function project(overrides = {}) {
     imageUrl: 'https://antin.example.com/image.png',
     imageKey: null,
     isPublic: true,
+    displayOrder: 0,
     createdAt: now,
     updatedAt: now,
     ...overrides,
@@ -171,6 +176,10 @@ describe('ProjectsController', () => {
     draftConfig = createDraftConfig();
     storage.getUrl.mockResolvedValue('https://cdn.example.com/project.png');
     draftProvider.generate.mockResolvedValue(caseStudyDraft());
+    prisma.project.aggregate.mockResolvedValue({
+      _max: { displayOrder: 0 },
+    });
+    prisma.$transaction.mockResolvedValue([]);
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [ProjectsModule],
@@ -203,6 +212,10 @@ describe('ProjectsController', () => {
   it('rejects unauthenticated project management without mutating state', async () => {
     await request(app.getHttpServer()).post('/projects').send({}).expect(401);
     await request(app.getHttpServer()).get('/projects').expect(401);
+    await request(app.getHttpServer())
+      .patch('/projects/reorder')
+      .send({ items: [{ id: 'project-1', displayOrder: 0 }] })
+      .expect(401);
     await request(app.getHttpServer()).get('/projects/antin-os').expect(401);
     await request(app.getHttpServer())
       .patch('/projects/project-1')
@@ -245,6 +258,7 @@ describe('ProjectsController', () => {
     expect(prisma.project.create).not.toHaveBeenCalled();
     expect(prisma.project.update).not.toHaveBeenCalled();
     expect(prisma.project.delete).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
     expect(prisma.projectCaseStudy.create).not.toHaveBeenCalled();
     expect(prisma.projectCaseStudy.update).not.toHaveBeenCalled();
     expect(prisma.projectCaseStudy.delete).not.toHaveBeenCalled();
@@ -288,8 +302,12 @@ describe('ProjectsController', () => {
         imageUrl: undefined,
         imageKey: undefined,
         isPublic: false,
+        displayOrder: 1,
       },
       select: projectSelect,
+    });
+    expect(prisma.project.aggregate).toHaveBeenCalledWith({
+      _max: { displayOrder: true },
     });
   });
 
@@ -303,7 +321,50 @@ describe('ProjectsController', () => {
     const response = await owner.get('/projects').expect(200);
 
     expect(response.body).toHaveLength(2);
-    expect(prisma.project.findMany).toHaveBeenCalledTimes(1);
+    expect(prisma.project.findMany).toHaveBeenCalledWith({
+      orderBy: [
+        { displayOrder: 'asc' },
+        { createdAt: 'desc' },
+        { updatedAt: 'desc' },
+      ],
+      select: projectSelect,
+    });
+  });
+
+  it('reorders managed projects and returns the refreshed ordered list', async () => {
+    const reorderedProjects = [
+      project({ id: 'project-2', displayOrder: 0 }),
+      project({ id: 'project-1', displayOrder: 1 }),
+    ];
+    prisma.project.findMany
+      .mockResolvedValueOnce([{ id: 'project-1' }, { id: 'project-2' }])
+      .mockResolvedValueOnce(reorderedProjects);
+    prisma.project.update.mockReturnValue({});
+
+    const response = await owner
+      .patch('/projects/reorder')
+      .send({
+        items: [
+          { id: 'project-2', displayOrder: 0 },
+          { id: 'project-1', displayOrder: 1 },
+        ],
+      })
+      .expect(200);
+
+    expect(response.body.map((item: { id: string }) => item.id)).toEqual([
+      'project-2',
+      'project-1',
+    ]);
+    expect(prisma.project.findMany).toHaveBeenNthCalledWith(1, {
+      where: { id: { in: ['project-2', 'project-1'] } },
+      select: { id: true },
+    });
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(prisma.project.update).toHaveBeenCalledWith({
+      where: { id: 'project-2' },
+      data: { displayOrder: 0 },
+      select: { id: true },
+    });
   });
 
   it('reads a managed project by id or slug', async () => {
@@ -529,7 +590,15 @@ describe('ProjectsController', () => {
       isPublic: true,
     });
     expect(prisma.project.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { isPublic: true } }),
+      {
+        where: { isPublic: true },
+        orderBy: [
+          { displayOrder: 'asc' },
+          { createdAt: 'desc' },
+          { updatedAt: 'desc' },
+        ],
+        select: projectSelect,
+      },
     );
     expect(prisma.project.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({

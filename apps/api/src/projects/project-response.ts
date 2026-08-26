@@ -17,6 +17,7 @@ export type ProjectRecord = Pick<
   | 'imageUrl'
   | 'imageKey'
   | 'isPublic'
+  | 'displayOrder'
   | 'createdAt'
   | 'updatedAt'
 >;
@@ -33,6 +34,7 @@ export const projectSelect = {
   imageUrl: true,
   imageKey: true,
   isPublic: true,
+  displayOrder: true,
   createdAt: true,
   updatedAt: true,
 } as const;
@@ -101,6 +103,7 @@ export function toProjectResponse(
     imageUrl: project.imageUrl,
     imageKey: project.imageKey,
     isPublic: project.isPublic,
+    displayOrder: project.displayOrder,
     createdAt: project.createdAt.toISOString(),
     updatedAt: project.updatedAt.toISOString(),
   };

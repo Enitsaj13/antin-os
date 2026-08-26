@@ -66,6 +66,7 @@ const removeProfilePicture = vi.fn();
 const createProject = vi.fn();
 const updateProject = vi.fn();
 const deleteProject = vi.fn();
+const reorderProjects = vi.fn();
 const uploadProjectImage = vi.fn();
 const generateProjectCaseStudyDraft = vi.fn();
 const createProjectCaseStudy = vi.fn();
@@ -162,6 +163,7 @@ function resetApiMocks() {
   mockedProjectMutations.useCreateProjectMutation.mockReset();
   mockedProjectMutations.useUpdateProjectMutation.mockReset();
   mockedProjectMutations.useDeleteProjectMutation.mockReset();
+  mockedProjectMutations.useReorderProjectsMutation.mockReset();
   mockedProjectMutations.useUploadProjectImageMutation.mockReset();
   mockedProjectMutations.useGenerateProjectCaseStudyDraftMutation.mockReset();
   mockedProjectMutations.useCreateProjectCaseStudyMutation.mockReset();
@@ -329,6 +331,7 @@ function project(overrides: Partial<Project> = {}): Project {
     imageUrl: 'https://example.com/image.png',
     imageKey: null,
     isPublic: true,
+    displayOrder: 0,
     createdAt: '2026-08-13T10:00:00.000Z',
     updatedAt: '2026-08-14T10:00:00.000Z',
     ...overrides,
@@ -504,6 +507,12 @@ function mockProjectHooks(
     mutateAsync: deleteProject,
     isPending: false,
   } as unknown as ReturnType<typeof projectMutations.useDeleteProjectMutation>);
+  mockedProjectMutations.useReorderProjectsMutation.mockReturnValue({
+    mutateAsync: reorderProjects,
+    isPending: false,
+  } as unknown as ReturnType<
+    typeof projectMutations.useReorderProjectsMutation
+  >);
   mockedProjectMutations.useUploadProjectImageMutation.mockReturnValue({
     mutateAsync: uploadProjectImage,
     isPending: false,
@@ -1880,6 +1889,51 @@ describe('projects admin list', () => {
     );
     await waitFor(() =>
       expect(screen.queryByText('Internal Tool')).not.toBeInTheDocument(),
+    );
+  });
+
+  it('reorders visible public projects from the admin list', async () => {
+    const firstProject = project({
+      id: 'project-1',
+      title: 'StepCast',
+      slug: 'stepcast',
+      displayOrder: 0,
+      isPublic: true,
+    });
+    const hiddenProject = project({
+      id: 'project-2',
+      title: 'Private Draft',
+      slug: 'private-draft',
+      displayOrder: 1,
+      isPublic: false,
+    });
+    const secondProject = project({
+      id: 'project-3',
+      title: 'GoGira',
+      slug: 'gogira',
+      displayOrder: 2,
+      isPublic: true,
+    });
+
+    mockProfileHooks();
+    mockProjectHooks([firstProject, hiddenProject, secondProject]);
+    reorderProjects.mockResolvedValue([secondProject, hiddenProject, firstProject]);
+
+    renderApp('/admin/projects');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Public' }));
+    fireEvent.click(
+      screen.getAllByRole('button', { name: 'Move StepCast down' })[0],
+    );
+
+    await waitFor(() =>
+      expect(reorderProjects).toHaveBeenCalledWith({
+        items: [
+          { id: 'project-2', displayOrder: 0 },
+          { id: 'project-3', displayOrder: 1 },
+          { id: 'project-1', displayOrder: 2 },
+        ],
+      }),
     );
   });
 

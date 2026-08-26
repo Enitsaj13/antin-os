@@ -3,6 +3,7 @@ import type {
   CreateCaseStudyDraftInput,
   CreateProjectCaseStudyInput,
   CreateProjectInput,
+  ReorderProjectInput,
   UpdateProjectCaseStudyInput,
   UpdateProjectCaseStudyPublicationInput,
   UpdateProjectInput,
@@ -13,6 +14,7 @@ import {
   deleteProjectCaseStudy,
   deleteProject,
   generateProjectCaseStudyDraft,
+  reorderProjects,
   updateProjectCaseStudy,
   updateProjectCaseStudyPublication,
   updateProject,
@@ -56,6 +58,17 @@ export function useDeleteProjectMutation() {
       void queryClient.invalidateQueries({
         queryKey: projectQueryKeys.managedDetail(id),
       });
+    },
+  });
+}
+
+export function useReorderProjectsMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: ReorderProjectInput) => reorderProjects(input),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: projectQueryKeys.all });
     },
   });
 }
