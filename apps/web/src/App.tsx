@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   BriefcaseBusiness,
+  ClipboardList,
   GraduationCap,
   FileText,
   FolderKanban,
@@ -12,6 +13,11 @@ import { useAdminSession } from './queries/auth.queries';
 import { CredentialsAdmin } from './CredentialsAdmin';
 import { ExperienceAdmin } from './ExperienceAdmin';
 import { LoginAdmin } from './LoginAdmin';
+import {
+  JobApplicationForm,
+  JobApplicationsDashboard,
+  JobApplicationsList,
+} from './JobApplicationsAdmin';
 import { ProfileAdmin } from './ProfileAdmin';
 import { ProjectFormPage, ProjectsAdmin } from './ProjectAdmin';
 import { ResumeAdmin } from './ResumeAdmin';
@@ -28,6 +34,11 @@ type Route =
   | { name: 'projects' }
   | { name: 'credentials' }
   | { name: 'experience' }
+  | { name: 'job-applications-dashboard' }
+  | { name: 'job-applications-table' }
+  | { name: 'job-applications-kanban' }
+  | { name: 'new-job-application' }
+  | { name: 'edit-job-application'; id: string }
   | { name: 'resume' }
   | { name: 'new-project' }
   | { name: 'edit-project'; id: string };
@@ -73,6 +84,33 @@ function parseRoute(pathname: string): Route {
 
   if (pathname === '/admin/experience') {
     return { name: 'experience' };
+  }
+
+  if (pathname === '/admin/job-applications') {
+    return { name: 'job-applications-dashboard' };
+  }
+
+  if (pathname === '/admin/job-applications/table') {
+    return { name: 'job-applications-table' };
+  }
+
+  if (pathname === '/admin/job-applications/kanban') {
+    return { name: 'job-applications-kanban' };
+  }
+
+  if (pathname === '/admin/job-applications/new') {
+    return { name: 'new-job-application' };
+  }
+
+  const editJobApplicationMatch = pathname.match(
+    /^\/admin\/job-applications\/([^/]+)\/edit$/,
+  );
+
+  if (editJobApplicationMatch?.[1]) {
+    return {
+      name: 'edit-job-application',
+      id: decodeURIComponent(editJobApplicationMatch[1]),
+    };
   }
 
   if (pathname === '/admin/credentials') {
@@ -144,11 +182,15 @@ export function App() {
       ? 'profile'
       : route.name === 'experience'
         ? 'experience'
-        : route.name === 'credentials'
-          ? 'credentials'
-          : route.name === 'resume'
-            ? 'resume'
-            : 'projects';
+        : route.name.startsWith('job-application') ||
+            route.name === 'new-job-application' ||
+            route.name === 'edit-job-application'
+          ? 'job-applications'
+          : route.name === 'credentials'
+            ? 'credentials'
+            : route.name === 'resume'
+              ? 'resume'
+              : 'projects';
 
   function onNavigate(path: string) {
     navigateTo(path);
@@ -209,6 +251,21 @@ export function App() {
           </h1>
         </div>
         <nav className="flex flex-wrap gap-2" aria-label="Admin navigation">
+          <button
+            className={`inline-flex min-h-10 items-center gap-2 border px-3 py-2 ${
+              activeSection === 'job-applications'
+                ? 'border-teal-700 bg-teal-700 text-white'
+                : 'border-slate-400 bg-white text-slate-800 hover:border-teal-700'
+            }`}
+            type="button"
+            aria-current={
+              activeSection === 'job-applications' ? 'page' : undefined
+            }
+            onClick={() => onNavigate('/admin/job-applications')}
+          >
+            <ClipboardList size={18} aria-hidden="true" />
+            Job applications
+          </button>
           <button
             className={`inline-flex min-h-10 items-center gap-2 border px-3 py-2 ${
               activeSection === 'profile'
@@ -291,6 +348,25 @@ export function App() {
         <ProjectsAdmin onNavigate={onNavigate} />
       ) : null}
       {route.name === 'experience' ? <ExperienceAdmin /> : null}
+      {route.name === 'job-applications-dashboard' ? (
+        <JobApplicationsDashboard onNavigate={onNavigate} />
+      ) : null}
+      {route.name === 'job-applications-table' ? (
+        <JobApplicationsList view="table" onNavigate={onNavigate} />
+      ) : null}
+      {route.name === 'job-applications-kanban' ? (
+        <JobApplicationsList view="kanban" onNavigate={onNavigate} />
+      ) : null}
+      {route.name === 'new-job-application' ? (
+        <JobApplicationForm mode="create" onNavigate={onNavigate} />
+      ) : null}
+      {route.name === 'edit-job-application' ? (
+        <JobApplicationForm
+          mode="edit"
+          applicationId={route.id}
+          onNavigate={onNavigate}
+        />
+      ) : null}
       {route.name === 'credentials' ? <CredentialsAdmin /> : null}
       {route.name === 'resume' ? <ResumeAdmin /> : null}
       {route.name === 'new-project' ? (

@@ -9,6 +9,7 @@ import { AuthModule } from './auth/auth.module';
 import { ExperienceModule } from './experience/experience.module';
 import { ResumeModule } from './resume/resume.module';
 import { CredentialsModule } from './credentials/credentials.module';
+import { JobApplicationsModule } from './job-applications/job-applications.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { CredentialsModule } from './credentials/credentials.module';
     ExperienceModule,
     ResumeModule,
     CredentialsModule,
+    JobApplicationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

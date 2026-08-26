@@ -982,6 +982,11 @@ describe('admin navigation', () => {
     '/admin/experience',
     '/admin/credentials',
     '/admin/resume',
+    '/admin/job-applications',
+    '/admin/job-applications/table',
+    '/admin/job-applications/kanban',
+    '/admin/job-applications/new',
+    '/admin/job-applications/application-1/edit',
     '/admin/projects/new',
     '/admin/projects/project-1/edit',
   ])(

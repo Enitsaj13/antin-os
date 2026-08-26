@@ -11,21 +11,53 @@ datasource db {
   provider = "postgresql"
 }
 
+enum JobApplicationStatus {
+  SAVED
+  APPLIED
+  SCREENING
+  INTERVIEW
+  OFFER
+  REJECTED
+  WITHDRAWN
+}
+
+model JobApplication {
+  id              String               @id @default(cuid())
+  company         String
+  position        String
+  jobUrl          String?
+  source          String?
+  salaryRange     String?
+  notes           String?
+  status          JobApplicationStatus @default(SAVED)
+  applicationDate DateTime?
+  interviewDate   DateTime?
+  nextActionDate  DateTime?
+  followUpNotes   String?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  @@index([status, updatedAt])
+  @@index([applicationDate])
+  @@index([interviewDate])
+  @@index([nextActionDate])
+}
+
 model Project {
-  id          String   @id @default(cuid())
-  title       String
-  slug        String   @unique
-  summary     String
-  description String?
-  techStack   String[]
-  repoUrl     String?
-  liveUrl     String?
-  imageUrl    String?
-  imageKey    String?
-  isPublic    Boolean  @default(false)
+  id           String   @id @default(cuid())
+  title        String
+  slug         String   @unique
+  summary      String
+  description  String?
+  techStack    String[]
+  repoUrl      String?
+  liveUrl      String?
+  imageUrl     String?
+  imageKey     String?
+  isPublic     Boolean  @default(false)
   displayOrder Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   caseStudy ProjectCaseStudy?
 
@@ -33,19 +65,19 @@ model Project {
 }
 
 model ProjectCaseStudy {
-  id                    String   @id @default(cuid())
-  projectId             String   @unique
-  context               String
-  problem               String
-  role                  String
-  approach              String
-  responsibilities      String[]
-  technicalChallenges   String[]
-  outcomes              String[]
-  lessonsLearned        String?
-  isPublic              Boolean  @default(false)
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  id                  String   @id @default(cuid())
+  projectId           String   @unique
+  context             String
+  problem             String
+  role                String
+  approach            String
+  responsibilities    String[]
+  technicalChallenges String[]
+  outcomes            String[]
+  lessonsLearned      String?
+  isPublic            Boolean  @default(false)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
