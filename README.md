@@ -53,6 +53,10 @@ make e2e-ui             # Playwright UI runner
 | -------------------------------------------------------------------- | ----------------------------------------------------------- |
 | [Repository Guide](docs/development/repository-guide.md)             | Set up, run, test, and troubleshoot this repo day-to-day    |
 | [Command Reference](docs/development/command-reference.md)           | Pick the smallest useful Makefile or pnpm command           |
+| [Docker Development](docs/development/docker.md)                     | Run the local stack with production-style containers        |
+| [CI](docs/development/ci.md)                                         | Understand GitHub Actions checks and troubleshooting        |
+| [Deployment](docs/operations/deployment.md)                          | Configure production runtime, migrations, health, rollback  |
+| [Container Delivery](docs/operations/container-delivery.md)          | Publish and consume GHCR API/web images                     |
 | [AWS S3 Portfolio Storage](docs/operations/aws-s3-project-images.md) | Configure S3 uploads for images and resume PDFs             |
 | [Projects Module Spec](docs/specs/projects-module.md)                | Understand the portfolio projects module behavior           |
 | [OpenSpec](openspec/)                                                | Review specs, active changes, and archived change proposals |

@@ -18,6 +18,11 @@ make up               # start local Postgres
 make down             # stop/remove local containers
 make logs             # follow container logs
 make db-wait          # wait until Postgres is ready
+make docker-build     # build API and web production images
+make docker-up        # start Postgres + API + web containers
+make docker-migrate   # run prisma migrate deploy once
+make docker-down      # stop/remove full Docker stack
+make docker-logs      # follow full-stack logs
 ```
 
 ## Development
@@ -49,6 +54,8 @@ AI_PROVIDER=mock
 
 For real OpenAI drafting, use `AI_PROVIDER=openai` only with server-side
 `OPENAI_API_KEY` and `OPENAI_MODEL` configured.
+
+Docker setup and runtime configuration: [Docker Development](docker.md).
 
 ## Quality
 

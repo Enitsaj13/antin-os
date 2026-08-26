@@ -148,6 +148,25 @@ Public projects: http://localhost:5173/projects
 
 The OpenSpec change name `add-portfolio-profile-management` is not a browser route.
 
+## Run With Docker
+
+For a containerized local stack:
+
+```bash
+make docker-build
+make docker-migrate
+make docker-up
+```
+
+Open:
+
+```text
+API: http://localhost:3001
+Web: http://localhost:5173
+```
+
+Full Docker instructions: [Docker Development](docker.md).
+
 ## Run Apps Separately
 
 ```bash
