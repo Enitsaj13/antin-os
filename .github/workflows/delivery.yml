@@ -1,0 +1,366 @@
+name: Delivery
+
+on:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+    branches:
+      - master
+      - dev
+
+concurrency:
+  group: delivery-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  migrate-development:
+    name: Deploy Development Migrations
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'dev'
+    runs-on: ubuntu-latest
+    environment: development
+    concurrency:
+      group: development-database-migrations
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    env:
+      NODE_VERSION: '24'
+      PNPM_VERSION: '10.15.1'
+      DATABASE_URL: ${{ secrets.DEVELOPMENT_DATABASE_URL }}
+      APPROVED_DATABASE_HOST: ${{ vars.DEVELOPMENT_DATABASE_HOST }}
+
+    steps:
+      - name: Checkout tested commit
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify approved development database
+        run: |
+          node <<'NODE'
+          const databaseUrl = process.env.DATABASE_URL;
+          const approvedHost = process.env.APPROVED_DATABASE_HOST;
+
+          if (!databaseUrl || !approvedHost) {
+            throw new Error('DEVELOPMENT_DATABASE_URL and DEVELOPMENT_DATABASE_HOST are required.');
+          }
+
+          const actualHost = new URL(databaseUrl).hostname;
+
+          if (actualHost !== approvedHost) {
+            throw new Error('DATABASE_URL does not point to the approved development database host.');
+          }
+          NODE
+
+      - name: Apply development migrations
+        run: pnpm --filter api prisma migrate deploy
+
+  publish:
+    name: Publish GHCR Images
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'master'
+    runs-on: ubuntu-latest
+    outputs:
+      api-image: ${{ steps.images.outputs.api-image }}
+      web-image: ${{ steps.images.outputs.web-image }}
+      image-sha: ${{ steps.images.outputs.image-sha }}
+
+    steps:
+      - name: Checkout tested commit
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Set image names
+        id: images
+        run: |
+          owner="$(printf '%s' "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          repo="${GITHUB_REPOSITORY#*/}"
+          sha="${{ github.event.workflow_run.head_sha }}"
+          api_image="ghcr.io/${owner}/${repo}-api"
+          web_image="ghcr.io/${owner}/${repo}-web"
+          {
+            echo "API_IMAGE=${api_image}"
+            echo "WEB_IMAGE=${web_image}"
+            echo "IMAGE_SHA=${sha}"
+          } >> "$GITHUB_ENV"
+          {
+            echo "api-image=${api_image}"
+            echo "web-image=${web_image}"
+            echo "image-sha=${sha}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: true
+          tags: |
+            ${{ env.API_IMAGE }}:${{ env.IMAGE_SHA }}
+            ${{ env.API_IMAGE }}:master
+            ${{ env.API_IMAGE }}:latest
+          cache-from: type=gha,scope=antin-os-api-delivery
+          cache-to: type=gha,mode=max,scope=antin-os-api-delivery
+
+      - name: Build and publish web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: true
+          tags: |
+            ${{ env.WEB_IMAGE }}:${{ env.IMAGE_SHA }}
+            ${{ env.WEB_IMAGE }}:master
+            ${{ env.WEB_IMAGE }}:latest
+          build-args: |
+            VITE_API_BASE_URL=http://localhost:3001
+          cache-from: type=gha,scope=antin-os-web-delivery
+          cache-to: type=gha,mode=max,scope=antin-os-web-delivery
+
+      - name: Image output
+        run: |
+          {
+            echo "### Published images"
+            echo ""
+            echo "- API: \`${API_IMAGE}:${IMAGE_SHA}\`"
+            echo "- Web: \`${WEB_IMAGE}:${IMAGE_SHA}\`"
+            echo ""
+            echo "Mutable convenience tags also updated: \`master\`, \`latest\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  migrate-production:
+    name: Deploy Production Migrations
+    needs: publish
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: production-database-migrations
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    env:
+      NODE_VERSION: '24'
+      PNPM_VERSION: '10.15.1'
+      DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+      APPROVED_DATABASE_HOST: ${{ vars.PRODUCTION_DATABASE_HOST }}
+
+    steps:
+      - name: Checkout tested commit
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify approved production database
+        run: |
+          node <<'NODE'
+          const databaseUrl = process.env.DATABASE_URL;
+          const approvedHost = process.env.APPROVED_DATABASE_HOST;
+
+          if (!databaseUrl || !approvedHost) {
+            throw new Error('PRODUCTION_DATABASE_URL and PRODUCTION_DATABASE_HOST are required.');
+          }
+
+          const actualHost = new URL(databaseUrl).hostname;
+
+          if (actualHost !== approvedHost) {
+            throw new Error('DATABASE_URL does not point to the approved production database host.');
+          }
+          NODE
+
+      - name: Apply production migrations
+        run: pnpm --filter api prisma migrate deploy
+
+  frontend-changes:
+    name: Detect Frontend Changes
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      changed: ${{ steps.detect.outputs.changed }}
+
+    steps:
+      - name: Checkout tested commit
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 2
+
+      - name: Detect frontend-related changes
+        id: detect
+        run: |
+          changed_files="$(git diff --name-only HEAD^ HEAD || git show --name-only --pretty=format: HEAD)"
+
+          if printf '%s\n' "$changed_files" | grep -Eq '^(apps/web/|packages/shared/|packages/api-client/|package.json|pnpm-lock.yaml|pnpm-workspace.yaml|vercel.ts)'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  deploy-api-render:
+    name: Deploy API to Render
+    needs:
+      - publish
+      - migrate-production
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+    env:
+      API_IMAGE_REF: ${{ needs.publish.outputs.api-image }}:${{ needs.publish.outputs.image-sha }}
+      RENDER_API_DEPLOY_HOOK_URL: ${{ secrets.RENDER_API_DEPLOY_HOOK_URL }}
+      RENDER_API_ORIGIN: ${{ vars.RENDER_API_ORIGIN }}
+
+    steps:
+      - name: Trigger Render deploy
+        run: |
+          if [ -z "$RENDER_API_DEPLOY_HOOK_URL" ] || [ -z "$RENDER_API_ORIGIN" ]; then
+            echo "RENDER_API_DEPLOY_HOOK_URL and RENDER_API_ORIGIN are required."
+            exit 1
+          fi
+
+          deploy_url="$(
+            node -e '
+              const url = new URL(process.env.RENDER_API_DEPLOY_HOOK_URL);
+              url.searchParams.set("imgURL", process.env.API_IMAGE_REF);
+              process.stdout.write(url.toString());
+            '
+          )"
+
+          curl -fsS -X POST "$deploy_url"
+
+          for attempt in $(seq 1 30); do
+            if curl -fsS "${RENDER_API_ORIGIN}/health" >/dev/null; then
+              break
+            fi
+
+            if [ "$attempt" -eq 30 ]; then
+              echo "Render API health check did not pass."
+              exit 1
+            fi
+
+            sleep 10
+          done
+
+          curl -fsS "${RENDER_API_ORIGIN}/public/profile" >/dev/null
+          curl -fsS "${RENDER_API_ORIGIN}/public/projects" >/dev/null
+
+          {
+            echo "### Render API deploy"
+            echo ""
+            echo "- API image: \`${API_IMAGE_REF}\`"
+            echo "- Health: \`${RENDER_API_ORIGIN}/health\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy-web-vercel:
+    name: Deploy Web to Vercel
+    needs:
+      - publish
+      - frontend-changes
+      - deploy-api-render
+    if: needs.frontend-changes.outputs.changed == 'true'
+
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+    env:
+      NODE_VERSION: '24'
+      PNPM_VERSION: '10.15.1'
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      RENDER_API_ORIGIN: ${{ vars.RENDER_API_ORIGIN }}
+
+    steps:
+      - name: Checkout tested commit
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Deploy to Vercel
+        run: |
+          if [ -z "$VERCEL_ORG_ID" ] || [ -z "$VERCEL_PROJECT_ID" ] || [ -z "$VERCEL_TOKEN" ]; then
+            echo "Vercel deployment secrets are not configured; skipping Vercel deployment."
+            exit 0
+          fi
+
+          if [ -z "$RENDER_API_ORIGIN" ]; then
+            echo "RENDER_API_ORIGIN production environment variable is required for the Vercel /api rewrite."
+            exit 1
+          fi
+
+          pnpm dlx vercel@latest pull --yes --environment=production --token "$VERCEL_TOKEN"
+          pnpm dlx vercel@latest build --prod --token "$VERCEL_TOKEN"
+          pnpm dlx vercel@latest deploy --prebuilt --prod --token "$VERCEL_TOKEN"
+          {
+            echo "### Vercel web deploy"
+            echo ""
+            echo "- Frontend source: \`${{ github.event.workflow_run.head_sha }}\`"
+            echo "- API rewrite origin: \`${RENDER_API_ORIGIN}\`"
+            echo "- Vite API base URL: \`/api\`"
+          } >> "$GITHUB_STEP_SUMMARY"

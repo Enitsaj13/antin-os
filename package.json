@@ -27,6 +27,7 @@
   "devDependencies": {
     "@fission-ai/openspec": "^1.8.0",
     "@playwright/test": "^1.62.1",
+    "@vercel/config": "^0.6.1",
     "prettier": "^3.9.6",
     "simple-git-hooks": "^2.13.1"
   },

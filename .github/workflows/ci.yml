@@ -1,0 +1,271 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+      - dev
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CI: 'true'
+  NODE_VERSION: '24'
+  PNPM_VERSION: '10.15.1'
+  DATABASE_URL: postgresql://antin:antin_password@localhost:5432/antin_os_ci?schema=public
+  PORT: '3001'
+  CORS_ORIGIN: http://127.0.0.1:5173,http://localhost:5173
+  ADMIN_USERNAME: owner
+  ADMIN_PASSWORD_HASH: $2d4243c0e4462350b2040ae16191809f7b160ad948066307e2777571486d5b56:155595834904252840a5661907825870ef0093565d29207b3a797ce135823f7f
+  AUTH_SESSION_SECRET: ci-session-secret-at-least-32-characters
+  AUTH_COOKIE_SECURE: 'false'
+  AUTH_LOGIN_RATE_LIMIT_MAX: '5'
+  AUTH_LOGIN_RATE_LIMIT_WINDOW_SECONDS: '300'
+  AI_DRAFTING_ENABLED: 'true'
+  AI_PROVIDER: mock
+  AI_DRAFT_TIMEOUT_MS: '30000'
+  AI_DRAFT_RATE_LIMIT: 50/60
+  AI_DRAFT_USAGE_LIMIT: 500/86400
+  AI_DRAFT_MAX_NOTES_LENGTH: '2000'
+  AI_DRAFT_MAX_OUTPUT_TOKENS: '1200'
+
+jobs:
+  commit-messages:
+    name: Conventional Commits
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout history
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Validate commit messages
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          PUSH_HEAD_SHA: ${{ github.sha }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            range="${PR_BASE_SHA}..${PR_HEAD_SHA}"
+          elif printf '%s' "$PUSH_BEFORE_SHA" | grep -Eq '^0+$'; then
+            range="${PUSH_HEAD_SHA}^..${PUSH_HEAD_SHA}"
+          else
+            range="${PUSH_BEFORE_SHA}..${PUSH_HEAD_SHA}"
+          fi
+
+          pattern='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9._-]+\))?!?: .+'
+          failed=0
+
+          while IFS= read -r subject; do
+            if printf '%s' "$subject" | grep -Eq "$pattern|^Merge pull request |^Merge branch |^Revert \""; then
+              continue
+            fi
+
+            echo "Non-conventional commit subject: $subject"
+            failed=1
+          done < <(git log --format=%s "$range")
+
+          exit "$failed"
+
+  verify:
+    name: Verify
+    needs: commit-messages
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: antin
+          POSTGRES_PASSWORD: antin_password
+          POSTGRES_DB: antin_os_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U antin -d antin_os_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Check formatting
+        run: pnpm format:check
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Validate Prisma schema
+        run: pnpm --filter api prisma validate
+
+      - name: Test committed migrations
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          PUSH_HEAD_SHA: ${{ github.sha }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            range="${PR_BASE_SHA}..${PR_HEAD_SHA}"
+          elif printf '%s' "$PUSH_BEFORE_SHA" | grep -Eq '^0+$'; then
+            range="${PUSH_HEAD_SHA}^..${PUSH_HEAD_SHA}"
+          else
+            range="${PUSH_BEFORE_SHA}..${PUSH_HEAD_SHA}"
+          fi
+
+          if git diff --name-only "$range" | grep -Eq '^apps/api/prisma/migrations/'; then
+            pnpm --filter api prisma migrate deploy
+          else
+            echo "No committed Prisma migration changes detected."
+          fi
+
+      - name: Run commit tests
+        run: pnpm test:commit
+
+      - name: Run API integration tests
+        run: pnpm --filter api test:e2e
+
+      - name: Build API
+        run: pnpm --filter api build
+
+      - name: Build web
+        run: pnpm --filter web build
+
+      - name: Validate OpenSpec
+        run: pnpm exec openspec validate --all --strict
+
+      - name: Run Playwright tests
+        run: pnpm test:e2e:web
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build API Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: false
+          tags: antin-os-api:${{ github.sha }}
+          cache-from: type=gha,scope=antin-os-api-ci
+          cache-to: type=gha,mode=max,scope=antin-os-api-ci
+
+      - name: Build web Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: false
+          tags: antin-os-web:${{ github.sha }}
+          build-args: |
+            VITE_API_BASE_URL=http://localhost:3001
+          cache-from: type=gha,scope=antin-os-web-ci
+          cache-to: type=gha,mode=max,scope=antin-os-web-ci
+
+  secrets:
+    name: Secret Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+
+  workflow-security:
+    name: Workflow Security
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout history
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Detect workflow changes
+        id: workflow-changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          PUSH_HEAD_SHA: ${{ github.sha }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            range="${PR_BASE_SHA}..${PR_HEAD_SHA}"
+          elif printf '%s' "$PUSH_BEFORE_SHA" | grep -Eq '^0+$'; then
+            range="${PUSH_HEAD_SHA}^..${PUSH_HEAD_SHA}"
+          else
+            range="${PUSH_BEFORE_SHA}..${PUSH_HEAD_SHA}"
+          fi
+
+          if git diff --name-only "$range" | grep -Eq '^\.github/workflows/'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Go for actionlint
+        if: steps.workflow-changes.outputs.changed == 'true'
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.25.x'
+
+      - name: Run actionlint
+        if: steps.workflow-changes.outputs.changed == 'true'
+        run: |
+          go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+
+      - name: Set up Python for Zizmor
+        if: steps.workflow-changes.outputs.changed == 'true'
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Run Zizmor
+        if: steps.workflow-changes.outputs.changed == 'true'
+        run: |
+          python -m pip install --user pipx
+          python -m pipx run zizmor==1.14.2 --no-progress .github/workflows
