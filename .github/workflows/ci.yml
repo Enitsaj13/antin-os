@@ -44,9 +44,10 @@ jobs:
 
     steps:
       - name: Checkout history
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Validate commit messages
         env:
@@ -99,17 +100,18 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
         with:
           version: ${{ env.PNPM_VERSION }}
 
       - name: Set up Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -173,10 +175,10 @@ jobs:
         run: pnpm test:e2e:web
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Build API Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           file: apps/api/Dockerfile
@@ -186,7 +188,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=antin-os-api-ci
 
       - name: Build web Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           file: apps/web/Dockerfile
@@ -205,12 +207,13 @@ jobs:
 
     steps:
       - name: Checkout full history
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Run Gitleaks
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@dcedce43c6f43de0b836d1fe38946645c9c638dc # v2
 
   workflow-security:
     name: Workflow Security
@@ -220,9 +223,10 @@ jobs:
 
     steps:
       - name: Checkout history
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Detect workflow changes
         id: workflow-changes
@@ -249,7 +253,7 @@ jobs:
 
       - name: Set up Go for actionlint
         if: steps.workflow-changes.outputs.changed == 'true'
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: '1.25.x'
 
@@ -260,7 +264,7 @@ jobs:
 
       - name: Set up Python for Zizmor
         if: steps.workflow-changes.outputs.changed == 'true'
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.13'
 
