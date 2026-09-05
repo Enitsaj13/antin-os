@@ -12,6 +12,7 @@ export type JobApplicationRecord = Pick<
   | 'jobUrl'
   | 'source'
   | 'salaryRange'
+  | 'jobDescription'
   | 'notes'
   | 'status'
   | 'applicationDate'
@@ -29,6 +30,7 @@ export const jobApplicationSelect = {
   jobUrl: true,
   source: true,
   salaryRange: true,
+  jobDescription: true,
   notes: true,
   status: true,
   applicationDate: true,

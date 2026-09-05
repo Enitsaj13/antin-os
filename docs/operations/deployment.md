@@ -105,12 +105,18 @@ OPENAI_MODEL=
 AI_DRAFT_TIMEOUT_MS=30000
 AI_DRAFT_RATE_LIMIT=5/60
 AI_DRAFT_USAGE_LIMIT=25/86400
+AI_DRAFT_MAX_INPUT_CHARACTERS=60000
 AI_DRAFT_MAX_NOTES_LENGTH=2000
 AI_DRAFT_MAX_OUTPUT_TOKENS=1200
 ```
 
 Only set `AI_PROVIDER=openai` when `OPENAI_API_KEY` and `OPENAI_MODEL` are
 configured. Keep OpenAI and AWS credentials API-only.
+Deploy and smoke-test with `AI_PROVIDER=mock` before intentionally enabling the
+real provider. Case-study and job-assistant generation share one in-memory
+rate/usage budget per API instance; horizontally scaled deployments need a
+shared limiter for global enforcement. Job descriptions and assistant results
+are private, and generated review state is not persisted.
 
 Render should enable proxy-aware production cookies:
 

@@ -18,14 +18,18 @@ import type {
 } from '@antin-os/shared';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@prisma/prisma.service';
-import { CASE_STUDY_DRAFT_CONFIG } from './case-study-draft/case-study-draft.config';
-import type { CaseStudyDraftConfig } from './case-study-draft/case-study-draft.config';
-import { CaseStudyDraftLimiter } from './case-study-draft/case-study-draft.limiter';
 import {
-  CASE_STUDY_DRAFT_PROVIDER,
-  CaseStudyDraftProviderError,
+  AI_DRAFTING_CONFIG,
+  type AiDraftingConfig,
+} from '@src/ai-drafting/ai-drafting.config';
+import { AiDraftingError } from '@src/ai-drafting/ai-drafting.error';
+import { AiDraftingService } from '@src/ai-drafting/ai-drafting.service';
+import {
+  CASE_STUDY_DRAFT_INSTRUCTIONS,
+  caseStudyDraftJsonSchema,
+  normalizeCaseStudyDraft,
 } from './case-study-draft/case-study-draft.provider';
-import type { CaseStudyDraftProvider } from './case-study-draft/case-study-draft.provider';
+import { createMockCaseStudyDraft } from './case-study-draft/mock-case-study-draft.provider';
 import { CreateCaseStudyDraftDto } from './dto/create-case-study-draft.dto';
 import { CreateProjectCaseStudyDto } from './dto/create-project-case-study.dto';
 import { CreateProjectImageUploadDto } from './dto/create-project-image-upload.dto';
@@ -96,11 +100,9 @@ export class ProjectsService {
     private readonly prisma: PrismaService,
     @Inject(PROJECT_IMAGE_STORAGE)
     private readonly projectImageStorage: ProjectImageStorage,
-    @Inject(CASE_STUDY_DRAFT_CONFIG)
-    private readonly caseStudyDraftConfig: CaseStudyDraftConfig,
-    @Inject(CASE_STUDY_DRAFT_PROVIDER)
-    private readonly caseStudyDraftProvider: CaseStudyDraftProvider,
-    private readonly caseStudyDraftLimiter: CaseStudyDraftLimiter,
+    @Inject(AI_DRAFTING_CONFIG)
+    private readonly aiDraftingConfig: AiDraftingConfig,
+    private readonly aiDraftingService: AiDraftingService,
   ) {}
 
   async create(dto: CreateProjectDto): Promise<ProjectResponse> {
@@ -309,13 +311,17 @@ export class ProjectsService {
     projectId: string,
     dto: CreateCaseStudyDraftDto,
   ): Promise<CaseStudyDraftResponse> {
-    this.ensureDraftingConfigured();
+    try {
+      this.aiDraftingService.ensureConfigured();
+    } catch (error) {
+      this.handleDraftProviderError(error);
+    }
 
     const notes = dto.notes?.trim();
 
-    if (notes && notes.length > this.caseStudyDraftConfig.maxNotesLength) {
+    if (notes && notes.length > this.aiDraftingConfig.maxNotesLength) {
       throw new BadRequestException(
-        `Owner notes must be ${this.caseStudyDraftConfig.maxNotesLength} characters or fewer`,
+        `Owner notes must be ${this.aiDraftingConfig.maxNotesLength} characters or fewer`,
       );
     }
 
@@ -338,44 +344,30 @@ export class ProjectsService {
       throw new NotFoundException('Project not found');
     }
 
-    const limitResult = this.caseStudyDraftLimiter.consume(
-      this.caseStudyDraftConfig.rateLimit,
-      this.caseStudyDraftConfig.usageLimit,
-    );
-
-    if (limitResult === 'rate-limit') {
-      throw new HttpException(
-        'AI draft generation rate limit exceeded',
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
-    }
-
-    if (limitResult === 'usage-limit') {
-      throw new HttpException(
-        'AI draft generation usage limit exceeded',
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
-    }
-
-    const abortController = new AbortController();
-    const timeout = setTimeout(
-      () => abortController.abort(),
-      this.caseStudyDraftConfig.timeoutMs,
-    );
-
     try {
-      const draft = await this.caseStudyDraftProvider.generate({
+      const input = {
         project,
-        notes: notes || undefined,
-        maxOutputTokens: this.caseStudyDraftConfig.maxOutputTokens,
-        signal: abortController.signal,
+        ownerNotes: notes ?? '',
+      };
+      const draft = await this.aiDraftingService.generate({
+        schemaName: 'case_study_draft',
+        schemaDescription:
+          'Structured draft fields for a portfolio project case study.',
+        schema: caseStudyDraftJsonSchema,
+        instructions: CASE_STUDY_DRAFT_INSTRUCTIONS,
+        input,
+        normalize: normalizeCaseStudyDraft,
+        createMock: () =>
+          createMockCaseStudyDraft({
+            project,
+            notes: notes || undefined,
+            maxOutputTokens: this.aiDraftingConfig.maxOutputTokens,
+          }),
       });
 
       return { draft };
     } catch (error) {
       this.handleDraftProviderError(error);
-    } finally {
-      clearTimeout(timeout);
     }
   }
 
@@ -517,20 +509,32 @@ export class ProjectsService {
     throw error;
   }
 
-  private ensureDraftingConfigured(): void {
-    if (!this.caseStudyDraftConfig.enabled) {
-      throw new ServiceUnavailableException('AI drafting is disabled');
-    }
-
-    if (this.caseStudyDraftConfig.errors.length > 0) {
-      throw new ServiceUnavailableException(
-        'AI drafting configuration is incomplete',
-      );
-    }
-  }
-
   private handleDraftProviderError(error: unknown): never {
-    if (error instanceof CaseStudyDraftProviderError) {
+    if (error instanceof AiDraftingError) {
+      if (error.code === 'disabled') {
+        throw new ServiceUnavailableException('AI drafting is disabled');
+      }
+
+      if (error.code === 'input-length') {
+        throw new BadRequestException(
+          `AI drafting input must be ${this.aiDraftingConfig.maxInputCharacters} characters or fewer`,
+        );
+      }
+
+      if (error.code === 'rate-limit') {
+        throw new HttpException(
+          'AI draft generation rate limit exceeded',
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+
+      if (error.code === 'usage-limit') {
+        throw new HttpException(
+          'AI draft generation usage limit exceeded',
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+
       if (error.code === 'timeout') {
         throw new GatewayTimeoutException('AI draft generation timed out');
       }

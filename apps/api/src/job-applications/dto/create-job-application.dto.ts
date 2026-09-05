@@ -60,6 +60,12 @@ export class CreateJobApplicationDto implements CreateJobApplicationInput {
   @Transform(toNullableTrimmedText)
   @ValidateIf((_, value) => value !== undefined && value !== null)
   @IsString()
+  @MaxLength(JOB_APPLICATION_TEXT_LIMITS.jobDescription)
+  jobDescription?: string | null;
+
+  @Transform(toNullableTrimmedText)
+  @ValidateIf((_, value) => value !== undefined && value !== null)
+  @IsString()
   @MaxLength(JOB_APPLICATION_TEXT_LIMITS.notes)
   notes?: string | null;
 

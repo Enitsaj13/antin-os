@@ -41,6 +41,7 @@ const OPTIONAL_TEXT_FIELDS = [
   'jobUrl',
   'source',
   'salaryRange',
+  'jobDescription',
   'notes',
   'followUpNotes',
 ] as const;
@@ -63,6 +64,7 @@ export class JobApplicationsService {
         jobUrl: dto.jobUrl ?? null,
         source: dto.source ?? null,
         salaryRange: dto.salaryRange ?? null,
+        jobDescription: dto.jobDescription ?? null,
         notes: dto.notes ?? null,
         status: STATUS_TO_PRISMA[dto.status ?? 'saved'],
         applicationDate: this.parseNullableDate(dto.applicationDate),
@@ -86,14 +88,18 @@ export class JobApplicationsService {
     }
 
     if (query.search) {
-      where.OR = ['company', 'position', 'source', 'salaryRange'].map(
-        (field) => ({
-          [field]: {
-            contains: query.search,
-            mode: 'insensitive',
-          },
-        }),
-      );
+      where.OR = [
+        'company',
+        'position',
+        'source',
+        'salaryRange',
+        'jobDescription',
+      ].map((field) => ({
+        [field]: {
+          contains: query.search,
+          mode: 'insensitive',
+        },
+      }));
     }
 
     const applications = await this.prisma.jobApplication.findMany({

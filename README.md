@@ -61,6 +61,7 @@ make e2e-ui             # Playwright UI runner
 | [Container Delivery](docs/operations/container-delivery.md)          | Publish and consume GHCR API/web images                     |
 | [AWS S3 Portfolio Storage](docs/operations/aws-s3-project-images.md) | Configure S3 uploads for images and resume PDFs             |
 | [Projects Module Spec](docs/specs/projects-module.md)                | Understand the portfolio projects module behavior           |
+| [AI Drafting and Job Assistant](docs/specs/ai-drafting.md)           | Configure and audit private structured AI workflows         |
 | [OpenSpec](openspec/)                                                | Review specs, active changes, and archived change proposals |
 
 ## Stack at a Glance

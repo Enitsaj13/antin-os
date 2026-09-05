@@ -14,6 +14,7 @@ import {
   type ReactNode,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import {
@@ -23,6 +24,7 @@ import {
   type JobApplication,
   type JobApplicationStatus,
 } from '@antin-os/shared';
+import { JobApplicationAssistantPanel } from './JobApplicationAssistantPanel';
 import { jobApplicationErrorMessage } from './job-application-errors';
 import {
   useCreateJobApplicationMutation,
@@ -66,6 +68,7 @@ type FormValues = {
   jobUrl: string;
   source: string;
   salaryRange: string;
+  jobDescription: string;
   notes: string;
   status: JobApplicationStatus;
   applicationDate: string;
@@ -82,6 +85,7 @@ const EMPTY_FORM: FormValues = {
   jobUrl: '',
   source: '',
   salaryRange: '',
+  jobDescription: '',
   notes: '',
   status: 'saved',
   applicationDate: '',
@@ -101,6 +105,7 @@ function toFormValues(application: JobApplication): FormValues {
     jobUrl: application.jobUrl ?? '',
     source: application.source ?? '',
     salaryRange: application.salaryRange ?? '',
+    jobDescription: application.jobDescription ?? '',
     notes: application.notes ?? '',
     status: application.status,
     applicationDate: dateInput(application.applicationDate),
@@ -122,6 +127,7 @@ function toInput(values: FormValues): CreateJobApplicationInput {
     jobUrl: nullableText(values.jobUrl),
     source: nullableText(values.source),
     salaryRange: nullableText(values.salaryRange),
+    jobDescription: nullableText(values.jobDescription),
     notes: nullableText(values.notes),
     status: values.status,
     applicationDate: values.applicationDate || null,
@@ -167,6 +173,7 @@ export function validateJobApplicationForm(values: FormValues): FormErrors {
     'jobUrl',
     'source',
     'salaryRange',
+    'jobDescription',
     'notes',
     'followUpNotes',
   ] as const) {
@@ -457,6 +464,7 @@ export function JobApplicationsList({
         application.position,
         application.source ?? '',
         application.salaryRange ?? '',
+        application.jobDescription ?? '',
       ].some((value) => value.toLowerCase().includes(normalizedSearch));
     });
   }, [applications, search, statusFilter]);
@@ -543,7 +551,8 @@ export function JobApplicationsList({
               className={INPUT_CLASS}
               type="search"
               value={search}
-              placeholder="Company, position, source, or salary"
+              placeholder="Company, position, source, salary, or description"
+              aria-description="Search also matches saved job descriptions"
               onChange={(event) => setSearch(event.target.value)}
             />
           </label>
@@ -940,14 +949,20 @@ export function JobApplicationForm({
   const detailQuery = useJobApplication(mode === 'edit' ? applicationId : '');
   const createMutation = useCreateJobApplicationMutation();
   const updateMutation = useUpdateJobApplicationMutation();
+  const loadedApplicationId = useRef('');
   const [form, setForm] = useState<FormValues>(EMPTY_FORM);
   const [errors, setErrors] = useState<FormErrors>({});
   const [success, setSuccess] = useState('');
   const isPending = createMutation.isPending || updateMutation.isPending;
 
   useEffect(() => {
-    if (mode === 'edit' && detailQuery.data) {
+    if (
+      mode === 'edit' &&
+      detailQuery.data &&
+      loadedApplicationId.current !== detailQuery.data.id
+    ) {
       setForm(toFormValues(detailQuery.data));
+      loadedApplicationId.current = detailQuery.data.id;
     }
   }, [detailQuery.data, mode]);
 
@@ -1207,6 +1222,39 @@ export function JobApplicationForm({
           </FormField>
         </div>
 
+        <FormField
+          label="Job description"
+          id="job-description"
+          error={errors.jobDescription}
+        >
+          <textarea
+            id="job-description"
+            className={`${INPUT_CLASS} min-h-64 resize-y`}
+            disabled={isPending}
+            aria-invalid={Boolean(errors.jobDescription)}
+            aria-describedby="job-description-guidance job-description-error"
+            value={form.jobDescription}
+            onChange={(event) =>
+              updateField('jobDescription', event.target.value)
+            }
+          />
+          <p
+            id="job-description-guidance"
+            className="m-0 text-sm font-normal text-slate-600"
+          >
+            Paste the complete listing.{' '}
+            {form.jobDescription.length.toLocaleString()} of{' '}
+            {JOB_APPLICATION_TEXT_LIMITS.jobDescription.toLocaleString()}{' '}
+            characters used;{' '}
+            {Math.max(
+              0,
+              JOB_APPLICATION_TEXT_LIMITS.jobDescription -
+                form.jobDescription.length,
+            ).toLocaleString()}{' '}
+            remaining.
+          </p>
+        </FormField>
+
         <FormField label="Notes" id="job-notes" error={errors.notes}>
           <textarea
             id="job-notes"
@@ -1253,6 +1301,19 @@ export function JobApplicationForm({
           </button>
         </div>
       </form>
+
+      {mode === 'edit' && detailQuery.data ? (
+        <JobApplicationAssistantPanel
+          application={detailQuery.data}
+          formValues={{
+            company: form.company,
+            position: form.position,
+            notes: form.notes,
+            followUpNotes: form.followUpNotes,
+          }}
+          onApplied={(field, value) => updateField(field, value)}
+        />
+      ) : null}
     </section>
   );
 }

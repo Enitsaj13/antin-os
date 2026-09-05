@@ -5,15 +5,22 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { JobApplication } from '@antin-os/shared';
 import * as apiClient from '../api-client';
 import { jobApplicationQueryKeys } from '../queries/job-application.queries';
-import { useUpdateJobApplicationMutation } from './job-application.mutations';
+import {
+  useGenerateJobApplicationAssistantMutation,
+  useUpdateJobApplicationMutation,
+} from './job-application.mutations';
 
 vi.mock('../api-client', () => ({
   updateJobApplication: vi.fn(),
   createJobApplication: vi.fn(),
   deleteJobApplication: vi.fn(),
+  generateJobApplicationAssistant: vi.fn(),
 }));
 
 const updateJobApplication = vi.mocked(apiClient.updateJobApplication);
+const generateJobApplicationAssistant = vi.mocked(
+  apiClient.generateJobApplicationAssistant,
+);
 
 const application: JobApplication = {
   id: 'application-1',
@@ -22,6 +29,7 @@ const application: JobApplication = {
   jobUrl: null,
   source: null,
   salaryRange: null,
+  jobDescription: null,
   notes: null,
   status: 'saved',
   applicationDate: null,
@@ -71,6 +79,48 @@ function setup() {
 
 beforeEach(() => {
   updateJobApplication.mockReset();
+  generateJobApplicationAssistant.mockReset();
+});
+
+describe('job application assistant mutation', () => {
+  it('sends only the selected closed operation without invalidating state', async () => {
+    const response = {
+      operation: 'coverLetter' as const,
+      sourceUpdatedAt: application.updatedAt,
+      content: 'Reviewed draft',
+      needsConfirmation: [],
+    };
+    generateJobApplicationAssistant.mockResolvedValue(response);
+    const queryClient = new QueryClient({
+      defaultOptions: { mutations: { retry: false } },
+    });
+
+    function Wrapper({ children }: { children: ReactNode }) {
+      return (
+        <QueryClientProvider client={queryClient}>
+          {children}
+        </QueryClientProvider>
+      );
+    }
+
+    const hook = renderHook(
+      () => useGenerateJobApplicationAssistantMutation(),
+      { wrapper: Wrapper },
+    );
+
+    await act(async () => {
+      await expect(
+        hook.result.current.mutateAsync({
+          id: application.id,
+          input: { operation: 'coverLetter' },
+        }),
+      ).resolves.toEqual(response);
+    });
+    expect(generateJobApplicationAssistant).toHaveBeenCalledWith(
+      application.id,
+      { operation: 'coverLetter' },
+    );
+  });
 });
 
 describe('job application mutation consistency', () => {

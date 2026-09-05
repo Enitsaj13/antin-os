@@ -10,11 +10,16 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import type { JobApplicationDashboardSummary } from '@antin-os/shared';
+import type {
+  JobApplicationAssistantResponse,
+  JobApplicationDashboardSummary,
+} from '@antin-os/shared';
 import { OwnerAuthGuard } from '@src/auth/owner-auth.guard';
 import { CreateJobApplicationDto } from './dto/create-job-application.dto';
+import { JobApplicationAssistantDto } from './dto/job-application-assistant.dto';
 import { ListJobApplicationsQueryDto } from './dto/list-job-applications-query.dto';
 import { UpdateJobApplicationDto } from './dto/update-job-application.dto';
+import { JobApplicationAssistantService } from './job-assistant/job-application-assistant.service';
 import type { JobApplicationResponse } from './job-application-response';
 import { JobApplicationsService } from './job-applications.service';
 
@@ -32,12 +37,21 @@ type JobApplicationOperations = {
   getDashboard(): Promise<JobApplicationDashboardSummary>;
 };
 
+type JobApplicationAssistantOperations = {
+  generate(
+    id: string,
+    dto: JobApplicationAssistantDto,
+  ): Promise<JobApplicationAssistantResponse>;
+};
+
 @Controller('job-applications')
 @UseGuards(OwnerAuthGuard)
 export class JobApplicationsController {
   constructor(
     @Inject(JobApplicationsService)
     private readonly jobApplicationsService: JobApplicationOperations,
+    @Inject(JobApplicationAssistantService)
+    private readonly jobApplicationAssistantService: JobApplicationAssistantOperations,
   ) {}
 
   @Post()
@@ -53,6 +67,14 @@ export class JobApplicationsController {
   @Get('dashboard')
   getDashboard() {
     return this.jobApplicationsService.getDashboard();
+  }
+
+  @Post(':id/assistant')
+  generateAssistant(
+    @Param('id') id: string,
+    @Body() dto: JobApplicationAssistantDto,
+  ) {
+    return this.jobApplicationAssistantService.generate(id, dto);
   }
 
   @Get(':id')

@@ -2,11 +2,13 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type {
   CreateJobApplicationInput,
   JobApplication,
+  JobApplicationAssistantInput,
   UpdateJobApplicationInput,
 } from '@antin-os/shared';
 import {
   createJobApplication,
   deleteJobApplication,
+  generateJobApplicationAssistant,
   updateJobApplication,
 } from '../api-client';
 import { jobApplicationQueryKeys } from '../queries/job-application.queries';
@@ -36,6 +38,24 @@ export function useCreateJobApplicationMutation() {
     mutationFn: (input: CreateJobApplicationInput) =>
       createJobApplication(input),
     onSuccess: (application) => {
+      queryClient.setQueryData(
+        jobApplicationQueryKeys.detail(application.id),
+        application,
+      );
+
+      for (const [queryKey, applications] of queryClient.getQueriesData<
+        JobApplication[]
+      >({ queryKey: jobApplicationQueryKeys.lists() })) {
+        if (applications) {
+          queryClient.setQueryData(
+            queryKey,
+            applications.map((item) =>
+              item.id === application.id ? application : item,
+            ),
+          );
+        }
+      }
+
       invalidateJobApplicationState(queryClient, application.id);
     },
   });
@@ -108,6 +128,24 @@ export function useUpdateJobApplicationMutation() {
       }
     },
     onSuccess: (application) => {
+      queryClient.setQueryData(
+        jobApplicationQueryKeys.detail(application.id),
+        application,
+      );
+
+      for (const [queryKey, applications] of queryClient.getQueriesData<
+        JobApplication[]
+      >({ queryKey: jobApplicationQueryKeys.lists() })) {
+        if (applications) {
+          queryClient.setQueryData(
+            queryKey,
+            applications.map((item) =>
+              item.id === application.id ? application : item,
+            ),
+          );
+        }
+      }
+
       invalidateJobApplicationState(queryClient, application.id);
     },
   });
@@ -121,5 +159,17 @@ export function useDeleteJobApplicationMutation() {
     onSuccess: (application) => {
       invalidateJobApplicationState(queryClient, application.id);
     },
+  });
+}
+
+type AssistantVariables = {
+  id: string;
+  input: JobApplicationAssistantInput;
+};
+
+export function useGenerateJobApplicationAssistantMutation() {
+  return useMutation({
+    mutationFn: ({ id, input }: AssistantVariables) =>
+      generateJobApplicationAssistant(id, input),
   });
 }

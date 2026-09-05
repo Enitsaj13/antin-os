@@ -23,6 +23,9 @@ type MockPrismaService = {
     delete: jest.Mock;
     groupBy: jest.Mock;
   };
+  profile: { findUnique: jest.Mock };
+  project: { findMany: jest.Mock };
+  experience: { findMany: jest.Mock };
 };
 
 function createMockPrisma(): MockPrismaService {
@@ -35,6 +38,9 @@ function createMockPrisma(): MockPrismaService {
       delete: jest.fn(),
       groupBy: jest.fn(),
     },
+    profile: { findUnique: jest.fn() },
+    project: { findMany: jest.fn() },
+    experience: { findMany: jest.fn() },
   };
 }
 
@@ -48,6 +54,7 @@ function application(overrides: Record<string, unknown> = {}) {
     jobUrl: 'https://example.com/jobs/1',
     source: 'Referral',
     salaryRange: '$100k-$140k',
+    jobDescription: 'Build private AI-assisted career workflows.',
     notes: 'Prepare systems examples.',
     status: PrismaJobApplicationStatus.SAVED,
     applicationDate: new Date('2026-08-20T00:00:00.000Z'),
@@ -67,6 +74,7 @@ function validPayload(overrides: Record<string, unknown> = {}) {
     jobUrl: ' https://example.com/jobs/1 ',
     source: ' Referral ',
     salaryRange: ' $100k-$140k ',
+    jobDescription: ' Build private AI-assisted career workflows. ',
     notes: ' Prepare systems examples. ',
     applicationDate: '2026-08-20',
     nextActionDate: '2026-08-29',
@@ -119,6 +127,10 @@ describe('JobApplicationsController', () => {
     await anonymous.get('/job-applications/dashboard').expect(401);
     await anonymous.get('/job-applications/application-1').expect(401);
     await anonymous
+      .post('/job-applications/application-1/assistant')
+      .send({ operation: 'analyze' })
+      .expect(401);
+    await anonymous
       .patch('/job-applications/application-1')
       .send({ status: 'applied' })
       .expect(401);
@@ -136,6 +148,7 @@ describe('JobApplicationsController', () => {
         jobUrl: null,
         source: null,
         salaryRange: null,
+        jobDescription: null,
         notes: null,
         applicationDate: null,
         interviewDate: null,
@@ -163,6 +176,7 @@ describe('JobApplicationsController', () => {
         jobUrl: null,
         source: null,
         salaryRange: null,
+        jobDescription: null,
         notes: null,
         status: PrismaJobApplicationStatus.SAVED,
         applicationDate: null,
@@ -225,7 +239,13 @@ describe('JobApplicationsController', () => {
     expect(prisma.jobApplication.findMany).toHaveBeenCalledWith({
       where: {
         status: PrismaJobApplicationStatus.SAVED,
-        OR: ['company', 'position', 'source', 'salaryRange'].map((field) => ({
+        OR: [
+          'company',
+          'position',
+          'source',
+          'salaryRange',
+          'jobDescription',
+        ].map((field) => ({
           [field]: { contains: 'product', mode: 'insensitive' },
         })),
       },
@@ -272,6 +292,10 @@ describe('JobApplicationsController', () => {
       .post('/job-applications')
       .send(validPayload({ company: 'x'.repeat(201) }))
       .expect(400);
+    await owner
+      .post('/job-applications')
+      .send(validPayload({ jobDescription: 'x'.repeat(30_001) }))
+      .expect(400);
     await owner.patch('/job-applications/application-1').send({}).expect(400);
 
     expect(prisma.jobApplication.create).not.toHaveBeenCalled();
@@ -286,6 +310,7 @@ describe('JobApplicationsController', () => {
           jobUrl: null,
           source: null,
           salaryRange: null,
+          jobDescription: null,
           notes: null,
           applicationDate: null,
           interviewDate: null,
@@ -303,6 +328,7 @@ describe('JobApplicationsController', () => {
         jobUrl: '',
         source: null,
         salaryRange: '   ',
+        jobDescription: '   ',
         notes: null,
         applicationDate: null,
         interviewDate: null,
@@ -322,6 +348,7 @@ describe('JobApplicationsController', () => {
           jobUrl: null,
           source: null,
           salaryRange: null,
+          jobDescription: null,
           notes: null,
           applicationDate: null,
           interviewDate: null,
@@ -376,5 +403,30 @@ describe('JobApplicationsController', () => {
 
     expect(prisma.jobApplication.update).not.toHaveBeenCalled();
     expect(prisma.jobApplication.delete).not.toHaveBeenCalled();
+  });
+
+  it('validates closed assistant operations and checks job source first', async () => {
+    await owner
+      .post('/job-applications/application-1/assistant')
+      .send({ operation: 'freeFormChat' })
+      .expect(400);
+
+    prisma.jobApplication.findUnique.mockResolvedValueOnce(null);
+    await owner
+      .post('/job-applications/missing/assistant')
+      .send({ operation: 'analyze' })
+      .expect(404);
+
+    prisma.jobApplication.findUnique.mockResolvedValueOnce(
+      application({ jobDescription: null }),
+    );
+    await owner
+      .post('/job-applications/application-1/assistant')
+      .send({ operation: 'coverLetter' })
+      .expect(400);
+
+    expect(prisma.profile.findUnique).not.toHaveBeenCalled();
+    expect(prisma.project.findMany).not.toHaveBeenCalled();
+    expect(prisma.experience.findMany).not.toHaveBeenCalled();
   });
 });
