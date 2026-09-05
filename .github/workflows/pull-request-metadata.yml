@@ -1,0 +1,53 @@
+name: Pull Request Metadata
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+    types: [opened, reopened, synchronize]
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: Branch whose pull request should be created or refreshed
+        required: true
+        type: string
+
+concurrency:
+  group: pr-metadata-${{ github.event.pull_request.head.ref || inputs.branch || github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    if: >-
+      github.event.deleted != true &&
+      (github.event_name != 'push' || github.ref_name != github.event.repository.default_branch) &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Check out trusted metadata script
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: scripts/sync-pull-request.cjs
+          sparse-checkout-cone-mode: false
+
+      - name: Explain first-time activation
+        if: hashFiles('scripts/sync-pull-request.cjs') == ''
+        run: echo '::warning::Merge the metadata workflow and script into the default branch to activate automatic PR descriptions.'
+
+      - name: Create or refresh pull request details
+        if: hashFiles('scripts/sync-pull-request.cjs') != ''
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        with:
+          script: |
+            const { syncPullRequest } = require('./scripts/sync-pull-request.cjs');
+            await syncPullRequest({ github, context, core });
