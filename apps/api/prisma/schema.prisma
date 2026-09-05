@@ -28,6 +28,7 @@ model JobApplication {
   jobUrl          String?
   source          String?
   salaryRange     String?
+  jobDescription  String?
   notes           String?
   status          JobApplicationStatus @default(SAVED)
   applicationDate DateTime?

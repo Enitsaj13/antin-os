@@ -80,7 +80,7 @@ the API, validated server-side, stored privately in S3, and downloaded through
 `/public/resume/download` only when published. Full AWS setup:
 [AWS S3 Project Images](../operations/aws-s3-project-images.md).
 
-AI case-study drafting is disabled by default. Keep these values server-side in
+AI drafting for case studies and the private job assistant is disabled by default. Keep these values server-side in
 `apps/api/.env`; do not create `VITE_*` or other browser-exposed AI variables:
 
 ```bash
@@ -91,6 +91,7 @@ OPENAI_MODEL=
 AI_DRAFT_TIMEOUT_MS=30000
 AI_DRAFT_RATE_LIMIT=5/60
 AI_DRAFT_USAGE_LIMIT=25/86400
+AI_DRAFT_MAX_INPUT_CHARACTERS=60000
 AI_DRAFT_MAX_NOTES_LENGTH=2000
 AI_DRAFT_MAX_OUTPUT_TOKENS=1200
 ```
@@ -117,6 +118,11 @@ hardcode a model, silently switch to a paid model/provider, or assume free-plan
 access is permanent. Rate and usage limits are in-memory request-count limits;
 they reset after an API restart and do not coordinate across multiple API
 instances.
+
+The input limit covers the normalized serialized domain payload and rejects
+oversized evidence without truncation. Job-assistant generations are transient,
+use only bounded managed portfolio evidence, and never submit an application or
+send a message. See [Shared AI Drafting and Job Assistant](../specs/ai-drafting.md).
 
 ## Run Locally
 

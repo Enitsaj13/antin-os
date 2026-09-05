@@ -47,7 +47,7 @@ pnpm --filter api auth:hash-password # generate ADMIN_PASSWORD_HASH
 openssl rand -base64 32              # generate AUTH_SESSION_SECRET
 ```
 
-AI case-study drafting is controlled by API-only env. For zero-cost local work,
+AI case-study and job-assistant drafting is controlled by API-only env. For zero-cost local work,
 set this in `apps/api/.env` before starting the API:
 
 ```bash
@@ -57,6 +57,10 @@ AI_PROVIDER=mock
 
 For real OpenAI drafting, use `AI_PROVIDER=openai` only with server-side
 `OPENAI_API_KEY` and `OPENAI_MODEL` configured.
+
+The reusable runner also enforces `AI_DRAFT_MAX_INPUT_CHARACTERS` and the shared
+rate, usage, timeout, and output-token limits. Keep mock mode enabled for tests
+and smoke checks; it is deterministic and performs no external request.
 
 Docker setup and runtime configuration: [Docker Development](docker.md).
 

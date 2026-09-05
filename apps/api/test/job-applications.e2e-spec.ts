@@ -25,6 +25,10 @@ describeWithDatabase('Job applications (PostgreSQL e2e)', () => {
     process.env.AUTH_COOKIE_SECURE = 'false';
     process.env.AUTH_LOGIN_RATE_LIMIT_MAX = '10';
     process.env.AUTH_LOGIN_RATE_LIMIT_WINDOW_SECONDS = '300';
+    process.env.AI_DRAFTING_ENABLED = 'true';
+    process.env.AI_PROVIDER = 'mock';
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.OPENAI_MODEL;
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -60,6 +64,7 @@ describeWithDatabase('Job applications (PostgreSQL e2e)', () => {
         jobUrl: 'https://example.com/jobs/private-marker',
         source: 'Private Source Marker',
         salaryRange: 'Private Salary Marker',
+        jobDescription: 'Private Job Description Marker',
         notes: 'Private Notes Marker',
         status: 'applied',
         applicationDate: '2026-08-20',
@@ -76,6 +81,7 @@ describeWithDatabase('Job applications (PostgreSQL e2e)', () => {
       company: 'Private Company Marker',
       position: 'Private Position Marker',
       source: 'Private Source Marker',
+      jobDescription: 'Private Job Description Marker',
     });
 
     const listResponse = await owner
@@ -108,6 +114,7 @@ describeWithDatabase('Job applications (PostgreSQL e2e)', () => {
       .send({
         company: 'Private Company Marker',
         position: 'Private Position Marker',
+        jobDescription: 'Private Job Description Marker',
         notes: 'Private Notes Marker',
         followUpNotes: 'Private Follow-up Marker',
       })
@@ -128,6 +135,7 @@ describeWithDatabase('Job applications (PostgreSQL e2e)', () => {
       expect(response.text).not.toContain('Private Company Marker');
       expect(response.text).not.toContain('Private Position Marker');
       expect(response.text).not.toContain('Private Notes Marker');
+      expect(response.text).not.toContain('Private Job Description Marker');
       expect(response.text).not.toContain('Private Follow-up Marker');
       expect(response.text).not.toContain('jobApplication');
     }
@@ -135,5 +143,58 @@ describeWithDatabase('Job applications (PostgreSQL e2e)', () => {
     await request(app.getHttpServer())
       .get('/public/job-applications')
       .expect(404);
+  });
+
+  it('keeps mock assistant generation private and mutation-free', async () => {
+    const created = await owner
+      .post('/job-applications')
+      .send({
+        company: 'Assistant Private Company',
+        position: 'Assistant Private Role',
+        jobDescription: 'Assistant Private Description',
+        notes: 'Keep this unchanged',
+      })
+      .expect(201);
+    const id = (created.body as { id: string }).id;
+    const before = await prisma.jobApplication.findUniqueOrThrow({
+      where: { id },
+    });
+
+    await request(app.getHttpServer())
+      .post(`/job-applications/${id}/assistant`)
+      .send({ operation: 'analyze' })
+      .expect(401);
+
+    const generated = await owner
+      .post(`/job-applications/${id}/assistant`)
+      .send({ operation: 'interviewQuestions' })
+      .expect(201);
+
+    const generatedBody = generated.body as unknown as {
+      operation: string;
+      sourceUpdatedAt: string;
+      questions: Array<{ question: string; suggestedAnswer: string }>;
+    };
+    expect(generatedBody.operation).toBe('interviewQuestions');
+    expect(generatedBody.sourceUpdatedAt).toBe(before.updatedAt.toISOString());
+    expect(generatedBody.questions).toHaveLength(1);
+    expect(typeof generatedBody.questions[0]?.question).toBe('string');
+    expect(generatedBody.questions[0]?.question.length).toBeGreaterThan(0);
+    expect(typeof generatedBody.questions[0]?.suggestedAnswer).toBe('string');
+    expect(generatedBody.questions[0]?.suggestedAnswer.length).toBeGreaterThan(
+      0,
+    );
+
+    const after = await prisma.jobApplication.findUniqueOrThrow({
+      where: { id },
+    });
+    expect(after).toEqual(before);
+
+    const publicResponse = await request(app.getHttpServer()).get(
+      '/public/profile',
+    );
+    expect([200, 404]).toContain(publicResponse.status);
+    expect(publicResponse.text).not.toContain('Assistant Private Description');
+    expect(publicResponse.text).not.toContain('suggestedAnswer');
   });
 });

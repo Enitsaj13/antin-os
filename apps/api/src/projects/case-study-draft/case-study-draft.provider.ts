@@ -1,4 +1,5 @@
 import type { CaseStudyDraft } from '@antin-os/shared';
+import { AiDraftingError } from '@src/ai-drafting/ai-drafting.error';
 
 export const CASE_STUDY_DRAFT_PROVIDER = Symbol('CASE_STUDY_DRAFT_PROVIDER');
 
@@ -24,18 +25,28 @@ export type CaseStudyDraftProviderInput = {
 export type CaseStudyDraftErrorCode =
   'configuration' | 'malformed' | 'provider' | 'timeout';
 
-export class CaseStudyDraftProviderError extends Error {
-  constructor(
-    public readonly code: CaseStudyDraftErrorCode,
-    message: string,
-  ) {
-    super(message);
-  }
+export class CaseStudyDraftProviderError extends AiDraftingError {
+  declare readonly code: CaseStudyDraftErrorCode;
 }
 
 export interface CaseStudyDraftProvider {
   generate(input: CaseStudyDraftProviderInput): Promise<CaseStudyDraft>;
 }
+
+export const CASE_STUDY_DRAFT_INSTRUCTIONS = [
+  'Generate a recruiter-readable project case-study draft.',
+  'Use only the provided project fields and optional owner notes.',
+  'Do not invent metrics, responsibilities, technologies, business outcomes, dates, clients, employers, or credentials.',
+  'Keep role as a short title only, such as "Full-stack Developer" or "Software Engineer - Mobile & Web"; do not include responsibilities, portals, technologies, or explanatory sentences in role.',
+  'Put responsibility details in responsibilities, context, or approach instead of role.',
+  'Always provide lessonsLearned as a recruiter-readable reflective paragraph of 2 to 4 sentences.',
+  'Base lessonsLearned on confirmed project role, stack, workflow, architecture, collaboration, QA, delivery, or engineering practices.',
+  'Prefer specific engineering takeaways over generic statements when supported by the provided data.',
+  'If a lesson is inferred rather than directly stated, keep it conservative and add a needsConfirmation item.',
+  'Never return null or an empty string for lessonsLearned.',
+  'If information is missing or uncertain, omit it or add a concise needsConfirmation item.',
+  'Return only strict JSON that matches the provided schema.',
+].join(' ');
 
 export const caseStudyDraftJsonSchema = {
   type: 'object',

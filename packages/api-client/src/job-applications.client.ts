@@ -1,6 +1,8 @@
 import type {
   CreateJobApplicationInput,
   JobApplication,
+  JobApplicationAssistantInput,
+  JobApplicationAssistantResponse,
   JobApplicationDashboardSummary,
   JobApplicationListFilter,
   UpdateJobApplicationInput,
@@ -66,5 +68,19 @@ export function deleteJobApplication(id: string): Promise<JobApplication> {
   return requestJson<JobApplication>(
     `/job-applications/${encodeURIComponent(id)}`,
     { method: 'DELETE' },
+  );
+}
+
+export function generateJobApplicationAssistant(
+  id: string,
+  input: JobApplicationAssistantInput,
+): Promise<JobApplicationAssistantResponse> {
+  return requestJson<JobApplicationAssistantResponse>(
+    `/job-applications/${encodeURIComponent(id)}/assistant`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    },
   );
 }

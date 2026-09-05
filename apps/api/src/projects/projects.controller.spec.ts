@@ -6,16 +6,14 @@ import type { App } from 'supertest/types';
 import request from 'supertest';
 import { configureApp } from '@src/app.setup';
 import { createPasswordHash } from '@src/auth/password-hash';
-import { CASE_STUDY_DRAFT_CONFIG } from './case-study-draft/case-study-draft.config';
-import type { CaseStudyDraftConfig } from './case-study-draft/case-study-draft.config';
-import {
-  CASE_STUDY_DRAFT_PROVIDER,
-  CaseStudyDraftProviderError,
-} from './case-study-draft/case-study-draft.provider';
+import { AI_DRAFTING_CONFIG } from '@src/ai-drafting/ai-drafting.config';
+import type { AiDraftingConfig } from '@src/ai-drafting/ai-drafting.config';
+import { AiDraftingError } from '@src/ai-drafting/ai-drafting.error';
 import type {
-  CaseStudyDraftProvider,
-  CaseStudyDraftProviderInput,
-} from './case-study-draft/case-study-draft.provider';
+  StructuredAiProvider,
+  StructuredAiProviderRequest,
+} from '@src/ai-drafting/structured-ai.provider';
+import { STRUCTURED_AI_PROVIDER } from '@src/ai-drafting/structured-ai.provider';
 import { projectCaseStudySelect, projectSelect } from './project-response';
 import { ProjectsModule } from './projects.module';
 import {
@@ -46,8 +44,8 @@ type MockProjectImageStorage = {
   [Key in keyof ProjectImageStorage]: jest.Mock;
 };
 
-type MockCaseStudyDraftProvider = {
-  [Key in keyof CaseStudyDraftProvider]: jest.Mock;
+type MockStructuredAiProvider = {
+  [Key in keyof StructuredAiProvider]: jest.Mock;
 };
 
 function createMockPrisma(): MockPrismaService {
@@ -79,19 +77,20 @@ function createMockProjectImageStorage(): MockProjectImageStorage {
   };
 }
 
-function createMockCaseStudyDraftProvider(): MockCaseStudyDraftProvider {
+function createMockStructuredAiProvider(): MockStructuredAiProvider {
   return {
     generate: jest.fn(),
   };
 }
 
-function createDraftConfig(): CaseStudyDraftConfig {
+function createDraftConfig(): AiDraftingConfig {
   return {
     enabled: true,
-    provider: 'mock',
+    provider: 'openai',
     timeoutMs: 30_000,
     rateLimit: { max: 100, windowSeconds: 60 },
     usageLimit: { max: 100, windowSeconds: 60 },
+    maxInputCharacters: 60_000,
     maxNotesLength: 2_000,
     maxOutputTokens: 1_200,
     errors: [],
@@ -158,8 +157,8 @@ describe('ProjectsController', () => {
   let app: INestApplication<App>;
   let prisma: MockPrismaService;
   let storage: MockProjectImageStorage;
-  let draftProvider: MockCaseStudyDraftProvider;
-  let draftConfig: CaseStudyDraftConfig;
+  let draftProvider: MockStructuredAiProvider;
+  let draftConfig: AiDraftingConfig;
   let owner: ReturnType<typeof request.agent>;
 
   beforeEach(async () => {
@@ -172,7 +171,7 @@ describe('ProjectsController', () => {
 
     prisma = createMockPrisma();
     storage = createMockProjectImageStorage();
-    draftProvider = createMockCaseStudyDraftProvider();
+    draftProvider = createMockStructuredAiProvider();
     draftConfig = createDraftConfig();
     storage.getUrl.mockResolvedValue('https://cdn.example.com/project.png');
     draftProvider.generate.mockResolvedValue(caseStudyDraft());
@@ -188,9 +187,9 @@ describe('ProjectsController', () => {
       .useValue(prisma)
       .overrideProvider(PROJECT_IMAGE_STORAGE)
       .useValue(storage)
-      .overrideProvider(CASE_STUDY_DRAFT_PROVIDER)
+      .overrideProvider(STRUCTURED_AI_PROVIDER)
       .useValue(draftProvider)
-      .overrideProvider(CASE_STUDY_DRAFT_CONFIG)
+      .overrideProvider(AI_DRAFTING_CONFIG)
       .useValue(draftConfig)
       .compile();
 
@@ -768,10 +767,14 @@ describe('ProjectsController', () => {
 
   it('generates an authenticated structured case-study draft without writing to the database', async () => {
     prisma.project.findUnique.mockResolvedValue(project());
-    let generationInput: CaseStudyDraftProviderInput | null = null;
+    let generationSerializedInput = '{}';
+    let generationMaxOutputTokens = 0;
+    let generationSignal: AbortSignal | undefined;
     draftProvider.generate.mockImplementation(
-      (input: CaseStudyDraftProviderInput) => {
-        generationInput = input;
+      (input: StructuredAiProviderRequest) => {
+        generationSerializedInput = input.serializedInput;
+        generationMaxOutputTokens = input.maxOutputTokens;
+        generationSignal = input.signal;
         return Promise.resolve(
           caseStudyDraft({
             responsibilities: ['Generated first', 'Generated second'],
@@ -806,14 +809,19 @@ describe('ProjectsController', () => {
         isPublic: true,
       },
     });
-    expect(generationInput?.project).toMatchObject({
+    const parsedInput: unknown = JSON.parse(generationSerializedInput);
+    const serializedInput = parsedInput as {
+      project?: { id?: string; title?: string; techStack?: string[] };
+      ownerNotes?: string;
+    };
+    expect(serializedInput.project).toMatchObject({
       id: 'project-1',
       title: 'Antin OS',
       techStack: ['NestJS', 'Prisma'],
     });
-    expect(generationInput?.notes).toBe('Keep claims conservative.');
-    expect(generationInput?.maxOutputTokens).toBe(1_200);
-    expect(generationInput?.signal).toBeInstanceOf(AbortSignal);
+    expect(serializedInput.ownerNotes).toBe('Keep claims conservative.');
+    expect(generationMaxOutputTokens).toBe(1_200);
+    expect(generationSignal).toBeInstanceOf(AbortSignal);
     expect(prisma.projectCaseStudy.create).not.toHaveBeenCalled();
     expect(prisma.projectCaseStudy.update).not.toHaveBeenCalled();
     expect(prisma.projectCaseStudy.delete).not.toHaveBeenCalled();
@@ -886,7 +894,7 @@ describe('ProjectsController', () => {
     prisma.project.findUnique.mockResolvedValue(project());
 
     draftProvider.generate.mockRejectedValueOnce(
-      new CaseStudyDraftProviderError('timeout', 'raw timeout'),
+      new AiDraftingError('timeout', 'raw timeout'),
     );
     await owner
       .post('/projects/project-1/case-study/draft')
@@ -894,7 +902,7 @@ describe('ProjectsController', () => {
       .expect(504);
 
     draftProvider.generate.mockRejectedValueOnce(
-      new CaseStudyDraftProviderError('malformed', 'raw malformed output'),
+      new AiDraftingError('malformed', 'raw malformed output'),
     );
     await owner
       .post('/projects/project-1/case-study/draft')
@@ -902,7 +910,7 @@ describe('ProjectsController', () => {
       .expect(502);
 
     draftProvider.generate.mockRejectedValueOnce(
-      new CaseStudyDraftProviderError('provider', 'raw provider failure'),
+      new AiDraftingError('provider', 'raw provider failure'),
     );
     await owner
       .post('/projects/project-1/case-study/draft')
